@@ -1,5 +1,5 @@
 # 🏙️ CivicFixAi - Smart City Issue Resolution Platform
-
+Use https://civic-fix-ai.vercel.app/
 **CivicFixAi** is a modern civic engagement platform designed to bridge the gap between citizens, authorities, and contractors. Powered by **Google Gemini**, it analyzes reported issues (like potholes or water leakage) in real-time to prioritize severity and suggest fixes.
 
 ![Project Status](https://img.shields.io/badge/Status-Live-success)
