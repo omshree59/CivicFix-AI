@@ -1,5 +1,5 @@
 // src/components/LandingPage.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShieldCheck, User, ArrowRight, Loader2, Lock, Check, 
@@ -11,35 +11,28 @@ import { INDIAN_LOCATIONS } from '../data/locations';
 
 // --- DATABASE OF APPROVED GMAIL ACCOUNTS ---
 const APPROVED_CONTRACTORS = {
-    // ELECTRICIANS
     "your.email@gmail.com": { name: "VoltMasters Pvt Ltd", id: "E-101", rating: 4.8 }, 
     "darshankolhe2005@gmail.com": { name: "DK Electricals", id: "E-102", rating: 4.9 },
-
-    // PLUMBERS
     "plumber.demo@gmail.com": { name: "LeakProof Pros", id: "P-201", rating: 4.6 },
-    
-    // GARBAGE
     "clean.city@gmail.com": { name: "Green Earth Waste", id: "G-401", rating: 4.7 },
-    
-    // ROAD
     "road.works@gmail.com": { name: "Highway Heroes Infra", id: "R-301", rating: 4.5 },
-    
-    // ALL ROUNDER
     "fix.it@gmail.com": { name: "Rapid Response Squad", id: "A-501", rating: 4.9 },
 };
 
 const LandingPage = ({ onSelectRole, cachedUser }) => {
+  // --- SPLASH SCREEN STATE ---
+  const [showSplash, setShowSplash] = useState(true);
+
+  // --- EXISTING STATE ---
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(null); 
-  
-  // CONTRACTOR STATE
   const [contractorStep, setContractorStep] = useState(0); 
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [contractorLoc, setContractorLoc] = useState({ state: '', city: '' });
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
 
-  // --- HACKATHON MODE: PINS OPEN FOR EVALUATORS ---
+  // --- HACKATHON MODE: PINS ---
   const CONTRACTOR_MASTER_PASS = "2025";
   const ADMIN_PIN = "1269";
   
@@ -50,6 +43,20 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
     { id: 'Road Maintenance', icon: <Shovel className="w-5 h-5 text-orange-400"/>, label: 'Road Work', accessPin: '4444' },
     { id: 'All Rounder', icon: <Wrench className="w-5 h-5 text-purple-400"/>, label: 'All Rounder', accessPin: '5555' },
   ];
+
+  // --- SPLASH SCREEN LOGIC ---
+  useEffect(() => {
+    // Sequence:
+    // 0.2s: Civic
+    // 1.0s: Fix
+    // 1.8s: Ai
+    // 2.6s: Tagline ("Resolving...")
+    // 4.5s: Fade Out
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 4500); // Increased duration to allow tagline to be read
+    return () => clearTimeout(timer);
+  }, []);
 
   // CITIZEN LOGIN
   const handleCitizenLogin = async () => {
@@ -80,69 +87,110 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
     }
   };
 
-  // --- CONTRACTOR GOOGLE AUTH (UPDATED) ---
+  // --- CONTRACTOR GOOGLE AUTH ---
   const handleContractorGoogleLogin = async () => {
       if (!contractorLoc.state || !contractorLoc.city) return alert("Please select your operating location first!");
-
       setLoading(true);
       try {
           const result = await signInWithPopup(auth, googleProvider);
           const email = result.user.email;
-          const googleName = result.user.displayName; // <--- GET REAL GOOGLE NAME
-
-          // 1. Check if Email is in the Approved List
+          const googleName = result.user.displayName; 
           const contractorData = APPROVED_CONTRACTORS[email] || APPROVED_CONTRACTORS["your.email@gmail.com"]; 
-
           if (contractorData) {
-              // 2. Success: Log in with GOOGLE details
               onSelectRole('contractor', { 
-                displayName: googleName, // <--- CHANGED: Uses Google Name (e.g. Darshan) instead of Firm Name
-                agencyName: contractorData.name, // Keep firm name in background if needed
-                roleType: selectedTrade.id,
-                operatingState: contractorLoc.state,
-                operatingCity: contractorLoc.city,
-                rating: contractorData.rating,
-                licenseId: contractorData.id,
-                email: email, 
-                verified: true 
+                displayName: googleName, agencyName: contractorData.name, roleType: selectedTrade.id,
+                operatingState: contractorLoc.state, operatingCity: contractorLoc.city,
+                rating: contractorData.rating, licenseId: contractorData.id, email: email, verified: true 
               });
           } else {
-              // 3. Failure: Unauthorized Email
               alert(`ACCESS DENIED: The email '${email}' is not registered as a verified contractor.`);
               setLoading(false);
           }
-      } catch (error) {
-          console.error(error);
-          setLoading(false);
-      }
+      } catch (error) { console.error(error); setLoading(false); }
   };
 
-  const triggerError = () => {
-    setError(true);
-    setTimeout(() => setError(false), 500);
-    setPin('');
-  };
+  const triggerError = () => { setError(true); setTimeout(() => setError(false), 500); setPin(''); };
 
   const handleCardClick = (role) => {
     if (activeTab === role) return;
-    setActiveTab(role);
-    setPin(''); setError(false);
-    setContractorStep(0); 
-    setSelectedTrade(null); 
-    setContractorLoc({state:'', city:''});
+    setActiveTab(role); setPin(''); setError(false); setContractorStep(0); setSelectedTrade(null); setContractorLoc({state:'', city:''});
   };
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+      
+      {/* --- SPLASH SCREEN OVERLAY --- */}
+      <AnimatePresence>
+        {showSplash && (
+          <motion.div 
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.8 } }}
+            className="fixed inset-0 z-[9999] bg-slate-900 flex flex-col items-center justify-center"
+          >
+             {/* Logo Container */}
+             <div className="text-center">
+                 <h1 className="text-6xl md:text-8xl font-extrabold tracking-tighter flex items-center justify-center mb-4">
+                    <motion.span 
+                      initial={{ opacity: 0, y: 50 }} 
+                      animate={{ opacity: 1, y: 0 }} 
+                      transition={{ duration: 0.5, delay: 0.2, type: "spring" }}
+                      className="text-white mr-1"
+                    >
+                      Civic
+                    </motion.span>
+                    <motion.span 
+                      initial={{ opacity: 0, y: 50 }} 
+                      animate={{ opacity: 1, y: 0 }} 
+                      transition={{ duration: 0.5, delay: 1.0, type: "spring" }}
+                      className="text-blue-500 mr-1"
+                    >
+                      Fix
+                    </motion.span>
+                    <motion.span 
+                      initial={{ opacity: 0, y: 50 }} 
+                      animate={{ opacity: 1, y: 0 }} 
+                      transition={{ duration: 0.5, delay: 1.8, type: "spring" }}
+                      className="text-blue-500"
+                    >
+                      Ai
+                    </motion.span>
+                 </h1>
+                 
+                 {/* Tagline Animation */}
+                 <motion.p
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.8, delay: 2.6 }}
+                    className="text-slate-400 text-xl md:text-2xl font-medium tracking-wide"
+                 >
+                    Resolving community issues together.
+                 </motion.p>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+
+      {/* --- MAIN DASHBOARD CONTENT --- */}
+      {/* Background blobs */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-20">
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500 rounded-full blur-[100px]" />
         <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-orange-500 rounded-full blur-[100px]" />
       </div>
 
       <div className="relative z-10 text-center max-w-6xl w-full">
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}>
-          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 tracking-tight">CivicFix<span className="text-blue-400">Ai</span></h1>
-          <p className="text-slate-400 text-xl mb-12 max-w-2xl mx-auto">Resolving community issues together.</p>
+        {/* Header - Appears after splash */}
+        <motion.div 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={!showSplash ? { opacity: 1, y: 0 } : {}} 
+            transition={{ duration: 0.8, delay: 0.2 }}
+        >
+          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 tracking-tight">
+            CivicFix<span className="text-blue-400">Ai</span>
+          </h1>
+          <p className="text-slate-400 text-xl mb-12 max-w-2xl mx-auto">
+            Resolving community issues together.
+          </p>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
@@ -151,6 +199,9 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
           <motion.button 
             onClick={handleCitizenLogin} 
             disabled={loading}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={!showSplash ? { opacity: 1, scale: 1 } : {}}
+            transition={{ duration: 0.5, delay: 0.4 }}
             whileHover={{ scale: 1.03 }} 
             whileTap={{ scale: 0.95 }}
             className="group bg-slate-800/50 backdrop-blur-md border border-slate-700 p-8 rounded-3xl text-left hover:bg-slate-800 transition-all shadow-2xl relative overflow-hidden flex flex-col items-start w-full h-full"
@@ -171,6 +222,9 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
           {/* 2. ADMIN CARD */}
           <motion.div 
             onClick={() => handleCardClick('admin')} 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={!showSplash ? { opacity: 1, scale: 1 } : {}}
+            transition={{ duration: 0.5, delay: 0.5 }}
             whileHover={activeTab !== 'admin' ? { scale: 1.03 } : {}} 
             className={`group bg-slate-800/50 backdrop-blur-md border ${error && activeTab === 'admin' ? 'border-red-500' : 'border-slate-700'} p-8 rounded-3xl text-left hover:bg-slate-800 transition-all shadow-2xl relative cursor-pointer flex flex-col items-start h-full`}
           >
@@ -197,6 +251,9 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
           {/* 3. CONTRACTOR CARD */}
           <motion.div 
             onClick={() => handleCardClick('contractor')} 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={!showSplash ? { opacity: 1, scale: 1 } : {}}
+            transition={{ duration: 0.5, delay: 0.6 }}
             whileHover={activeTab !== 'contractor' ? { scale: 1.03 } : {}} 
             className={`group bg-slate-800/50 backdrop-blur-md border ${error && activeTab === 'contractor' ? 'border-red-500' : 'border-slate-700'} p-8 rounded-3xl text-left hover:bg-slate-800 transition-all shadow-2xl relative cursor-pointer flex flex-col items-start h-full`}
           >
@@ -215,8 +272,7 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
             ) : (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4 w-full">
                 <AnimatePresence mode="wait">
-                    
-                    {/* STEP 0: MASTER PIN */}
+                    {/* Contractor Steps Logic (Same as before) */}
                     {contractorStep === 0 && (
                         <motion.div key="step0" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}>
                             <p className="text-xs text-orange-400 font-bold mb-2 uppercase">1. Master Access Code</p>
@@ -226,8 +282,7 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
                             </div>
                         </motion.div>
                     )}
-
-                    {/* STEP 1: SELECT TRADE */}
+                    {/* (Other Contractor Steps remain identical) */}
                     {contractorStep === 1 && (
                         <motion.div key="step1" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}>
                              <div className="flex justify-between items-center mb-2">
@@ -243,8 +298,6 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
                              </div>
                         </motion.div>
                     )}
-
-                    {/* STEP 2: TRADE PIN */}
                     {contractorStep === 2 && (
                         <motion.div key="step2" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}>
                              <div className="flex justify-between items-center mb-2">
@@ -257,8 +310,6 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
                              </div>
                         </motion.div>
                     )}
-
-                    {/* STEP 3: LOCATION LOCK */}
                     {contractorStep === 3 && (
                         <motion.div key="step3" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}>
                              <div className="flex justify-between items-center mb-2">
@@ -280,20 +331,15 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
                              </div>
                         </motion.div>
                     )}
-
-                    {/* STEP 4: GOOGLE AUTHENTICATION */}
                     {contractorStep === 4 && (
                         <motion.div key="step4" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}>
                              <div className="flex justify-between items-center mb-4">
                                 <p className="text-xs text-orange-400 font-bold uppercase">5. Secure Verification</p>
                                 <button onClick={(e) => {e.stopPropagation(); setContractorStep(3)}} className="text-slate-500 hover:text-white"><ChevronLeft className="w-4 h-4"/></button>
                              </div>
-                             
                              <div className="bg-slate-900/80 border border-slate-700 rounded-xl p-4 text-center">
                                 <BadgeCheck className="w-10 h-10 text-orange-500 mx-auto mb-3" />
-                                <p className="text-xs text-slate-400 mb-4">
-                                    Authenticate via Google to verify your agency license.
-                                </p>
+                                <p className="text-xs text-slate-400 mb-4">Authenticate via Google to verify your agency license.</p>
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleContractorGoogleLogin(); }} 
                                     className="w-full bg-white text-slate-900 hover:bg-gray-100 p-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-lg"
@@ -305,7 +351,6 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
                              <p className="text-[10px] text-slate-600 text-center mt-3">Only registered emails allowed.</p>
                         </motion.div>
                     )}
-
                 </AnimatePresence>
               </motion.div>
             )}
