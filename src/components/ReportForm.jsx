@@ -1,13 +1,12 @@
 // src/components/ReportForm.jsx
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Disc } from 'lucide-react';
 import { getAiAdvice } from '../services/aiService';
 import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { 
-  Loader2, Send, UploadCloud, Sparkles, ShieldAlert,
-  Droplets, Construction, Trash2, Lightbulb, HelpCircle, MapPin, ArrowLeft
+  Disc, Loader2, Send, UploadCloud, Sparkles, ShieldAlert,
+  Droplets, Construction, Trash2, Lightbulb, HelpCircle, MapPin, ArrowLeft, CheckCircle, AlertCircle
 } from 'lucide-react';
 
 import { INDIAN_LOCATIONS } from '../data/locations';
@@ -15,6 +14,7 @@ import { INDIAN_LOCATIONS } from '../data/locations';
 const ReportForm = ({ onRefresh, user }) => {
   const { t } = useTranslation();
   const [step, setStep] = useState(1); 
+  const [isSubmitted, setIsSubmitted] = useState(false);
   
   const [formData, setFormData] = useState({
     category: '', 
@@ -30,6 +30,9 @@ const ReportForm = ({ onRefresh, user }) => {
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   
+  // Validation State
+  const [errors, setErrors] = useState({});
+
   // AI Loading State
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null);
@@ -46,10 +49,14 @@ const ReportForm = ({ onRefresh, user }) => {
     { id: 'Other', label: t('cat.Other') || "Other", icon: <HelpCircle className="w-10 h-10 text-white" />, bg: 'bg-gradient-to-br from-slate-600 to-slate-800', shadow: 'shadow-slate-500/30', border: 'border-slate-500/30' },
   ];
 
-  // --- LOGIC: Handle switching vs resuming ---
+  // Helper to clear specific field error when user types
+  const clearError = (field) => {
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: null }));
+    }
+  };
+
   const handleCategorySelect = (selectedCategory) => {
-    // 1. If the user selects a DIFFERENT category than what is currently in state:
-    //    We must WIPE the form clean so "Pothole" data doesn't appear in "Water Leakage".
     if (selectedCategory !== formData.category) {
         setFormData({ 
             category: selectedCategory, 
@@ -63,10 +70,8 @@ const ReportForm = ({ onRefresh, user }) => {
         setImage(null);
         setPreview(null);
         setAiAdvice(null);
+        setErrors({}); // Clear errors on category change
     }
-    // 2. If the user selects the SAME category (e.g. clicked Back, then clicked Potholes again):
-    //    We do NOTHING to formData. The previous state is preserved (Resume Mode).
-    
     setStep(2);
   };
 
@@ -76,15 +81,8 @@ const ReportForm = ({ onRefresh, user }) => {
       setImage(file);
       setPreview(URL.createObjectURL(file));
       setAiAdvice(null);
+      clearError('image');
     }
-  };
-
-  const handleStateChange = (e) => {
-    setFormData({ ...formData, state: e.target.value, city: '', pincode: '' });
-  };
-
-  const handleCityChange = (e) => {
-    setFormData({ ...formData, city: e.target.value, pincode: '' });
   };
 
   const uploadToCloudinary = async (file) => {
@@ -97,36 +95,67 @@ const ReportForm = ({ onRefresh, user }) => {
     return result.secure_url;
   };
 
-  // --- AI Handler with 2.5s Delay + Title Scan ---
   const handleAskAI = async (e) => {
     e.preventDefault();
     
-    if (!image || (!formData.description && !formData.title)) {
-        return alert("Please add an image and at least a Title or Description!");
+    // Validate for AI
+    const newErrors = {};
+    if (!image) newErrors.image = "An image is required for AI analysis.";
+    if (!formData.description && !formData.title) {
+        newErrors.description = "Provide a title or description for the AI.";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        return;
     }
 
     setAiLoading(true);
-    
     try {
         const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2500));
         const [advice] = await Promise.all([
             getAiAdvice(image, formData.title, formData.description),
             minLoadingTime
         ]);
-        
         setAiAdvice(advice);
     } catch (error) {
         console.error("AI Generation Error:", error);
-        alert("Could not reach Gemini AI. Please check your connection.");
+        alert("Could not reach AI. Please check your connection.");
     } finally {
         setAiLoading(false);
     }
   };
 
+  const resetForm = () => {
+    setIsSubmitted(false);
+    setStep(1);
+    setFormData({ category: '', title: '', description: '', state: '', city: '', pincode: '', addressDetail: '' });
+    setImage(null);
+    setPreview(null);
+    setAiAdvice(null);
+    setErrors({});
+    if (onRefresh) onRefresh();
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.title.trim()) newErrors.title = "Title is required";
+    if (!formData.state) newErrors.state = "State is required";
+    if (!formData.city) newErrors.city = "City is required";
+    if (!formData.pincode.trim()) newErrors.pincode = "Pincode is required";
+    if (!formData.addressDetail.trim()) newErrors.addressDetail = "Address is required";
+    if (!image) newErrors.image = "Image is required";
+    if (!formData.description.trim()) newErrors.description = "Description is required";
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0; // Returns true if no errors
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!image || !formData.title || !formData.description || !formData.state || !formData.city || !formData.pincode || !formData.addressDetail) {
-      return alert("Please fill all fields, including location details!");
+    
+    if (!validateForm()) {
+        return; // Stop submission if validation fails (no alert needed)
     }
     
     setLoading(true);
@@ -162,17 +191,12 @@ const ReportForm = ({ onRefresh, user }) => {
         votes: 0
       });
 
-      alert("Report Submitted Successfully!");
-      setStep(1);
-      // Reset form completely after successful submit
-      setFormData({ category: '', title: '', description: '', state: '', city: '', pincode: '', addressDetail: '' });
-      setImage(null);
-      setPreview(null);
-      setAiAdvice(null);
-      if (onRefresh) onRefresh();
+      setIsSubmitted(true);
+      setTimeout(() => resetForm(), 4000);
+
     } catch (err) {
       console.error(err);
-      alert("Error submitting report: " + err.message);
+      alert("Error submitting report: " + err.message); // Server errors can still alert
     } finally {
       setLoading(false);
     }
@@ -186,149 +210,220 @@ const ReportForm = ({ onRefresh, user }) => {
   return (
     <div className="w-full max-w-5xl mx-auto">
       
-      {/* STEP 1: CATEGORY SELECTION */}
-      {step === 1 && (
-        <div className="animate-in fade-in zoom-in duration-500">
-           <div className="text-center mb-10">
-                <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">{t('citizen.heading') || "What seems to be the problem?"}</h1>
-                <p className="text-slate-400">{t('citizen.subheading') || "Select a category below to start your report."}</p>
-           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {categories.map((cat) => (
-              <button 
-                key={cat.id}
-                onClick={() => handleCategorySelect(cat.id)}
-                className={`relative group overflow-hidden rounded-3xl p-6 h-48 text-left transition-all duration-300 hover:scale-[1.02] ${cat.bg} border border-white/10 hover:border-white/30 shadow-lg hover:shadow-2xl ${cat.shadow}`}
-              >
-                <div className="absolute top-[-20px] right-[-20px] opacity-20 group-hover:opacity-30 transition-opacity transform scale-150 rotate-12">{cat.icon}</div>
-                <div className="relative z-10 flex flex-col h-full justify-between">
-                    <div className="bg-white/10 w-14 h-14 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/20 shadow-inner">
-                        {cat.icon}
-                    </div>
-                    <div>
-                        <h3 className="text-2xl font-bold text-white mb-1 shadow-black/10 drop-shadow-md">{cat.label}</h3>
-                    </div>
-                </div>
-              </button>
-            ))}
+      {/* SUCCESS SCREEN */}
+      {isSubmitted ? (
+        <div className="max-w-2xl mx-auto bg-slate-900/60 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700/50 p-12 text-center animate-in zoom-in duration-500">
+          <div className="mx-auto flex items-center justify-center h-24 w-24 rounded-full bg-green-500/20 mb-6 border border-green-500/30">
+            <CheckCircle className="h-12 w-12 text-green-400" />
           </div>
+          <h2 className="text-3xl font-bold text-white mb-4">Report Submitted!</h2>
+          <p className="text-lg text-slate-300 mb-8">
+            Thank you for making the community safer. The municipal authorities have been notified of the issue.
+          </p>
+          <button 
+            onClick={resetForm}
+            className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold py-3 px-6 rounded-xl transition-colors"
+          >
+            Report Another Issue
+          </button>
         </div>
-      )}
-
-      {/* STEP 2: DARK FORM */}
-      {step === 2 && (
-        <div className="max-w-2xl mx-auto bg-slate-900/60 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700/50 overflow-hidden animate-in slide-in-from-bottom-10 duration-500">
-          
-          <div className="p-6 border-b border-slate-700/50 flex items-center gap-4 bg-slate-900/40">
-            <button onClick={() => setStep(1)} className="p-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded-xl transition-colors text-slate-300">
-                <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div>
-                <h2 className="text-xl font-bold text-white">{t('citizen.reportTitle') || "Report Issue"}: {t(`cat.${formData.category}`) || formData.category}</h2>
-            </div>
-          </div>
-          
-          <form className="p-8 space-y-6">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wide">Issue Title</label>
-              <input 
-                type="text" 
-                className="w-full p-4 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-semibold text-white placeholder-slate-600 transition-all"
-                placeholder={t('citizen.issueTitlePlaceholder') || "e.g., Heavy water leakage near Main Gate"}
-                value={formData.title}
-                onChange={(e) => setFormData({...formData, title: e.target.value})}
-              />
-            </div>
-
-            <div className="space-y-4">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><MapPin className="w-3 h-3 text-blue-400"/> {t('citizen.locDetails') || "Location Details"}</label>
-                
-                <div className="grid grid-cols-2 gap-4">
-                    <select value={formData.state} onChange={handleStateChange} className="w-full p-3 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-sm font-medium text-white custom-select">
-                        <option value="" className="bg-slate-900 text-slate-400">{t('citizen.selectState') || "Select State"}</option>
-                        {Object.keys(INDIAN_LOCATIONS).sort().map(state => <option key={state} value={state} className="bg-slate-900">{state}</option>)}
-                    </select>
-
-                    <select value={formData.city} onChange={handleCityChange} disabled={!formData.state} className="w-full p-3 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed">
-                        <option value="" className="bg-slate-900 text-slate-400">{t('citizen.selectCity') || "Select City"}</option>
-                        {formData.state && Object.keys(INDIAN_LOCATIONS[formData.state]).sort().map(city => <option key={city} value={city} className="bg-slate-900">{city}</option>)}
-                    </select>
-                </div>
-
-                <div className="relative">
-                      <input 
-                        list="pincode-options"
-                        type="text"
-                        placeholder={t('citizen.enterPincode') || "Enter or Select Pincode"}
-                        value={formData.pincode}
-                        onChange={(e) => setFormData({...formData, pincode: e.target.value})}
-                        disabled={!formData.city}
-                        className="w-full p-3 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-sm font-medium text-white disabled:opacity-50"
-                      />
-                      <datalist id="pincode-options">
-                        {getPincodeOptions().map(pin => <option key={pin} value={pin} />)}
-                      </datalist>
-                </div>
-
-                <input 
-                  type="text" 
-                  className="w-full p-3 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-sm font-medium text-white placeholder-slate-600"
-                  placeholder={t('citizen.addressPlaceholder') || "Street Name, Landmark, House No."}
-                  value={formData.addressDetail}
-                  onChange={(e) => setFormData({...formData, addressDetail: e.target.value})}
-                />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="group relative h-full">
-                <label className={`flex flex-col items-center justify-center w-full h-full min-h-[140px] border-2 border-dashed rounded-xl cursor-pointer transition-all ${preview ? 'border-blue-500 bg-slate-800/50' : 'border-slate-700 hover:border-blue-400 hover:bg-slate-800/30'}`}>
-                    {preview ? <img src={preview} alt="Preview" className="h-full w-full object-cover rounded-xl" /> : <div className="flex flex-col items-center justify-center text-slate-400"><UploadCloud className="w-8 h-8 mb-2 group-hover:text-blue-400 transition-colors" /><p className="text-xs font-bold">{t('citizen.uploadPhoto') || "Upload Photo"}</p></div>}
-                    <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
-                </label>
-                </div>
-                <textarea 
-                    className="w-full p-4 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-sm resize-none h-full min-h-[140px] text-white placeholder-slate-600"
-                    placeholder={t('citizen.descPlaceholder') || "Describe the problem in detail..."}
-                    value={formData.description}
-                    onChange={(e) => setFormData({...formData, description: e.target.value})}
-                />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-4">
-              <button onClick={handleAskAI} disabled={aiLoading || loading} className="group bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 border border-indigo-500/30 transition-all active:scale-95">
-                {aiLoading ? (
-                    <><Loader2 className="animate-spin w-5 h-5" /> Analyzing...</>
-                ) : (
-                    <><Sparkles className="w-5 h-5 group-hover:text-indigo-200 transition-colors" /> {t('citizen.askAi') || "Ask Gemini"}</>
-                )}
-              </button>
-              <button onClick={handleSubmit} disabled={loading} className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/40 hover:shadow-blue-900/60 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed">
-                {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <Send className="w-5 h-5" />} {t('citizen.submit') || "Submit Report"}
-              </button>
-            </div>
-          </form>
-
-          {aiAdvice && (
-            <div className="p-6 bg-slate-950/80 text-white border-t border-slate-800 backdrop-blur-md animate-in fade-in slide-in-from-bottom-2">
-               <div className="flex items-center gap-2 mb-4">
-                   <ShieldAlert className="text-yellow-400 w-5 h-5" />
-                   <h3 className="font-bold text-lg">AI Analysis</h3>
-                   <span className="ml-auto text-xs bg-yellow-500/10 text-yellow-300 border border-yellow-500/20 px-2 py-1 rounded-lg uppercase tracking-wider font-bold">Severity: {aiAdvice.severity}</span>
+      ) : (
+        <>
+          {/* STEP 1: CATEGORY SELECTION */}
+          {step === 1 && (
+            <div className="animate-in fade-in zoom-in duration-500">
+               <div className="text-center mb-10">
+                    <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">{t('citizen.heading') || "What seems to be the problem?"}</h1>
+                    <p className="text-slate-400">{t('citizen.subheading') || "Select a category below to start your report."}</p>
                </div>
-               <div className="grid grid-cols-2 gap-6 text-sm text-slate-300">
-                <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800">
-                    <p className="font-bold text-blue-300 mb-2 uppercase text-xs tracking-wider">Precautions</p>
-                    <ul className="list-disc list-inside space-y-1 marker:text-blue-500">{aiAdvice.precautions?.slice(0,3).map((tip, i) => <li key={i}>{tip}</li>)}</ul>
-                </div>
-                <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800">
-                    <p className="font-bold text-green-300 mb-2 uppercase text-xs tracking-wider">Quick Fixes</p>
-                    <ul className="list-disc list-inside space-y-1 marker:text-green-500">{aiAdvice.diyFixes?.slice(0,3).map((fix, i) => <li key={i}>{fix}</li>)}</ul>
-                </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {categories.map((cat) => (
+                  <button 
+                    key={cat.id}
+                    onClick={() => handleCategorySelect(cat.id)}
+                    className={`relative group overflow-hidden rounded-3xl p-6 h-48 text-left transition-all duration-300 hover:scale-[1.02] ${cat.bg} border border-white/10 hover:border-white/30 shadow-lg hover:shadow-2xl ${cat.shadow}`}
+                  >
+                    <div className="absolute top-[-20px] right-[-20px] opacity-20 group-hover:opacity-30 transition-opacity transform scale-150 rotate-12">{cat.icon}</div>
+                    <div className="relative z-10 flex flex-col h-full justify-between">
+                        <div className="bg-white/10 w-14 h-14 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/20 shadow-inner">
+                            {cat.icon}
+                        </div>
+                        <div>
+                            <h3 className="text-2xl font-bold text-white mb-1 shadow-black/10 drop-shadow-md">{cat.label}</h3>
+                        </div>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           )}
-        </div>
+
+          {/* STEP 2: DARK FORM */}
+          {step === 2 && (
+            <div className="max-w-2xl mx-auto bg-slate-900/60 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700/50 overflow-hidden animate-in slide-in-from-bottom-10 duration-500">
+              
+              <div className="p-6 border-b border-slate-700/50 flex items-center gap-4 bg-slate-900/40">
+                <button onClick={() => setStep(1)} className="p-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded-xl transition-colors text-slate-300">
+                    <ArrowLeft className="w-5 h-5" />
+                </button>
+                <div>
+                    <h2 className="text-xl font-bold text-white">{t('citizen.reportTitle') || "Report Issue"}: {t(`cat.${formData.category}`) || formData.category}</h2>
+                </div>
+              </div>
+              
+              <form className="p-8 space-y-6">
+                
+                {/* TITLE INPUT */}
+                <div className="space-y-1 relative">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wide">Issue Title</label>
+                  <input 
+                    type="text" 
+                    className={`w-full p-4 bg-slate-950/50 border rounded-xl outline-none font-semibold text-white placeholder-slate-600 transition-all ${errors.title ? 'border-red-500/70 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}`}
+                    placeholder={t('citizen.issueTitlePlaceholder') || "e.g., Heavy water leakage near Main Gate"}
+                    value={formData.title}
+                    onChange={(e) => {
+                        setFormData({...formData, title: e.target.value});
+                        clearError('title');
+                    }}
+                  />
+                  {errors.title && <p className="text-red-400 text-xs mt-1 absolute -bottom-5 left-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {errors.title}</p>}
+                </div>
+
+                {/* LOCATION DETAILS */}
+                <div className="space-y-4 pt-4">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><MapPin className="w-3 h-3 text-blue-400"/> {t('citizen.locDetails') || "Location Details"}</label>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="relative">
+                            <select 
+                                value={formData.state} 
+                                onChange={(e) => {
+                                    setFormData({ ...formData, state: e.target.value, city: '', pincode: '' });
+                                    clearError('state');
+                                }} 
+                                className={`w-full p-3 bg-slate-950/50 border rounded-xl outline-none text-sm font-medium text-white custom-select transition-all ${errors.state ? 'border-red-500/70 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}`}
+                            >
+                                <option value="" className="bg-slate-900 text-slate-400">{t('citizen.selectState') || "Select State"}</option>
+                                {Object.keys(INDIAN_LOCATIONS).sort().map(state => <option key={state} value={state} className="bg-slate-900">{state}</option>)}
+                            </select>
+                            {errors.state && <p className="text-red-400 text-xs mt-1 absolute -bottom-5 left-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {errors.state}</p>}
+                        </div>
+
+                        <div className="relative">
+                            <select 
+                                value={formData.city} 
+                                onChange={(e) => {
+                                    setFormData({ ...formData, city: e.target.value, pincode: '' });
+                                    clearError('city');
+                                }} 
+                                disabled={!formData.state} 
+                                className={`w-full p-3 bg-slate-950/50 border rounded-xl outline-none text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all ${errors.city ? 'border-red-500/70 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}`}
+                            >
+                                <option value="" className="bg-slate-900 text-slate-400">{t('citizen.selectCity') || "Select City"}</option>
+                                {formData.state && Object.keys(INDIAN_LOCATIONS[formData.state]).sort().map(city => <option key={city} value={city} className="bg-slate-900">{city}</option>)}
+                            </select>
+                            {errors.city && <p className="text-red-400 text-xs mt-1 absolute -bottom-5 left-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {errors.city}</p>}
+                        </div>
+                    </div>
+
+                    <div className="relative pt-2">
+                          <input 
+                            list="pincode-options"
+                            type="text"
+                            placeholder={t('citizen.enterPincode') || "Enter or Select Pincode"}
+                            value={formData.pincode}
+                            onChange={(e) => {
+                                setFormData({...formData, pincode: e.target.value});
+                                clearError('pincode');
+                            }}
+                            disabled={!formData.city}
+                            className={`w-full p-3 bg-slate-950/50 border rounded-xl outline-none text-sm font-medium text-white disabled:opacity-50 transition-all ${errors.pincode ? 'border-red-500/70 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}`}
+                          />
+                          <datalist id="pincode-options">
+                            {getPincodeOptions().map(pin => <option key={pin} value={pin} />)}
+                          </datalist>
+                          {errors.pincode && <p className="text-red-400 text-xs mt-1 absolute -bottom-5 left-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {errors.pincode}</p>}
+                    </div>
+
+                    <div className="relative pt-2">
+                        <input 
+                        type="text" 
+                        className={`w-full p-3 bg-slate-950/50 border rounded-xl outline-none text-sm font-medium text-white placeholder-slate-600 transition-all ${errors.addressDetail ? 'border-red-500/70 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}`}
+                        placeholder={t('citizen.addressPlaceholder') || "Street Name, Landmark, House No."}
+                        value={formData.addressDetail}
+                        onChange={(e) => {
+                            setFormData({...formData, addressDetail: e.target.value});
+                            clearError('addressDetail');
+                        }}
+                        />
+                        {errors.addressDetail && <p className="text-red-400 text-xs mt-1 absolute -bottom-5 left-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {errors.addressDetail}</p>}
+                    </div>
+                </div>
+
+                {/* IMAGE AND DESCRIPTION AREA */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                    <div className="group relative h-full">
+                        <label className={`flex flex-col items-center justify-center w-full h-full min-h-[140px] border-2 border-dashed rounded-xl cursor-pointer transition-all ${errors.image ? 'border-red-500/70 bg-red-500/5' : preview ? 'border-blue-500 bg-slate-800/50' : 'border-slate-700 hover:border-blue-400 hover:bg-slate-800/30'}`}>
+                            {preview ? <img src={preview} alt="Preview" className="h-full w-full object-cover rounded-xl" /> : <div className="flex flex-col items-center justify-center text-slate-400"><UploadCloud className={`w-8 h-8 mb-2 transition-colors ${errors.image ? 'text-red-400' : 'group-hover:text-blue-400'}`} /><p className={`text-xs font-bold ${errors.image ? 'text-red-400' : ''}`}>{t('citizen.uploadPhoto') || "Upload Photo"}</p></div>}
+                            <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+                        </label>
+                        {errors.image && <p className="text-red-400 text-xs mt-1 absolute -bottom-5 left-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {errors.image}</p>}
+                    </div>
+                    
+                    <div className="relative h-full">
+                        <textarea 
+                            className={`w-full p-4 bg-slate-950/50 border rounded-xl outline-none text-sm resize-none h-full min-h-[140px] text-white placeholder-slate-600 transition-all ${errors.description ? 'border-red-500/70 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}`}
+                            placeholder={t('citizen.descPlaceholder') || "Describe the problem in detail..."}
+                            value={formData.description}
+                            onChange={(e) => {
+                                setFormData({...formData, description: e.target.value});
+                                clearError('description');
+                            }}
+                        />
+                        {errors.description && <p className="text-red-400 text-xs mt-1 absolute -bottom-5 left-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {errors.description}</p>}
+                    </div>
+                </div>
+
+                {/* BUTTONS */}
+                <div className="grid grid-cols-2 gap-4 pt-6">
+                  <button onClick={handleAskAI} disabled={aiLoading || loading} className="group bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 border border-indigo-500/30 transition-all active:scale-95 disabled:opacity-50">
+                    {aiLoading ? (
+                        <><Loader2 className="animate-spin w-5 h-5" /> Analyzing...</>
+                    ) : (
+                        <><Sparkles className="w-5 h-5 group-hover:text-indigo-200 transition-colors" /> {t('citizen.askAi') || "Ask Gemini"}</>
+                    )}
+                  </button>
+                  
+                  <button onClick={handleSubmit} disabled={loading} className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/40 hover:shadow-blue-900/60 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed">
+                    {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <Send className="w-5 h-5" />} {t('citizen.submit') || "Submit Report"}
+                  </button>
+                </div>
+              </form>
+
+              {/* AI ADVICE PANEL */}
+              {aiAdvice && (
+                <div className="p-6 bg-slate-950/80 text-white border-t border-slate-800 backdrop-blur-md animate-in fade-in slide-in-from-bottom-2">
+                   <div className="flex items-center gap-2 mb-4">
+                       <ShieldAlert className="text-yellow-400 w-5 h-5" />
+                       <h3 className="font-bold text-lg">AI Analysis</h3>
+                       <span className="ml-auto text-xs bg-yellow-500/10 text-yellow-300 border border-yellow-500/20 px-2 py-1 rounded-lg uppercase tracking-wider font-bold">Severity: {aiAdvice.severity}</span>
+                   </div>
+                   <div className="grid grid-cols-2 gap-6 text-sm text-slate-300">
+                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+                        <p className="font-bold text-blue-300 mb-2 uppercase text-xs tracking-wider">Precautions</p>
+                        <ul className="list-disc list-inside space-y-1 marker:text-blue-500">{aiAdvice.precautions?.slice(0,3).map((tip, i) => <li key={i}>{tip}</li>)}</ul>
+                    </div>
+                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+                        <p className="font-bold text-green-300 mb-2 uppercase text-xs tracking-wider">Quick Fixes</p>
+                        <ul className="list-disc list-inside space-y-1 marker:text-green-500">{aiAdvice.diyFixes?.slice(0,3).map((fix, i) => <li key={i}>{fix}</li>)}</ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
