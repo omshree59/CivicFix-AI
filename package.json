@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@tensorflow-models/mobilenet": "^2.1.1",
+    "@tensorflow/tfjs": "^4.22.0",
     "firebase": "^12.6.0",
     "framer-motion": "^12.23.26",
     "i18next": "^25.7.3",

@@ -1,203 +1,255 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// src/services/aiService.js
+import * as tf from '@tensorflow/tfjs';
+import * as mobilenet from '@tensorflow-models/mobilenet';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-
-if (!GEMINI_API_KEY) {
-  console.error("CRITICAL ERROR: Missing VITE_GEMINI_API_KEY in .env file.");
-}
-
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
-// --- 1. LOCAL KNOWLEDGE BASE (Smart Keyword Detection) ---
+// --- EXPANDED LOCAL KNOWLEDGE BASE ---
 const KNOWLEDGE_BASE = [
   {
-    // Matches: pothole, pit, crater, road damage, broken road
-    pattern: /(pothole|pit|crater|road damage|broken road|sinkhole)/i,
+    id: "waterlogging",
+    category: "Water Leakage / Waterlogging",
+    textPattern: /(water|leak|pipe|burst|flood|drainage|sewage|overflow|gutter|clogged|river|lake|submerged|pond|puddle)/i,
+    visionPattern: /(water|lake|sea|fountain|pool|stream|river|dam|ocean|geyser|drain|gutter|puddle|bathtub|whirlpool|faucet)/i,
+    response: {
+      category: "Water Leakage / Waterlogging",
+      severity: "High",
+      estimatedTime: "4-6 Hours",
+      impactScope: 80,
+      summary: "Detected water accumulation or flooding on the roadway, posing safety hazards to commuters.",
+      precautions: [
+        "Avoid driving through deep stagnant water.",
+        "Watch out for submerged potholes or open drains underneath the water.",
+        "Keep a safe distance from power lines or street poles near water."
+      ],
+      diyFixes: [
+        "Clear surface leaves or debris blocking nearby storm drain grates.",
+        "Divert water away from building entrances using sandbags if available.",
+        "Report exact GPS location to municipal water & drainage board."
+      ]
+    }
+  },
+  {
+    id: "potholes",
+    category: "Potholes",
+    textPattern: /(pothole|pit|crater|broken road|damaged asphalt|sinkhole|asphalt damage|trench|crack)/i,
+    visionPattern: /(asphalt|pavement|dirt|mud|soil|crack|trench|gravel|wheelbarrow|cliff)/i,
     response: {
       category: "Potholes",
       severity: "Medium",
       estimatedTime: "24-48 Hours",
       impactScope: 60,
-      summary: "Detected surface degradation potentially hazardous to vehicles.",
+      summary: "Detected surface degradation and road cavity hazardous to vehicles.",
       precautions: [
-        "Place a red cloth or reflective cone near the pit.",
-        "Drive slowly and maintain distance.",
-        "Do not attempt to fill with loose soil (it washes away)."
+        "Place a visible marker or reflective cone near the hole.",
+        "Slow down when approaching the damaged section.",
+        "Do not fill with loose uncompacted soil."
       ],
       diyFixes: [
-        "Fill with gravel or cold asphalt mix if available.",
-        "Report exact GPS coordinates to municipal corporation.",
-        "Use sandbags to divert water accumulation."
+        "Fill temporarily with cold-mix asphalt or gravel if safe.",
+        "Mark the perimeter with bright chalk or safety tape.",
+        "Notify local road maintenance authorities."
       ]
     }
   },
   {
-    // Matches: electric, wire, spark, shock, short circuit, shortcircuit, current, pole, street light, streetlight
-    pattern: /(electric|wire|spark|shock|short\s?circuit|current|pole|street\s?light|lamp|voltage)/i,
+    id: "electrical",
+    category: "Electrical Hazard",
+    textPattern: /(electric|wire|spark|shock|short\s?circuit|current|pole|street\s?light|lamp|voltage|transformer|power|cable)/i,
+    visionPattern: /(lamp|light|lantern|pole|wire|electric|spotlight|street sign|traffic light|power line)/i,
     response: {
-      category: "Street Light / Electricity",
+      category: "Electrical Hazard",
       severity: "Critical",
       estimatedTime: "2-4 Hours",
       impactScope: 95,
       summary: "High-voltage electrical hazard detected. Immediate intervention required.",
       precautions: [
-        "STAY AWAY: Maintain at least 10 meters distance.",
-        "Do not touch any metal objects nearby.",
-        "Keep children and pets indoors."
+        "STAY AWAY at least 10 meters (30 feet).",
+        "Do not touch any nearby metal fences or damp ground.",
+        "Keep children and pets away from the area."
       ],
       diyFixes: [
-        "Do NOT attempt any physical fix.",
-        "Call the emergency electricity board helpline immediately.",
-        "Cordon off the area with rope if safe to do so."
+        "Do NOT attempt to touch or move wires.",
+        "Call emergency electrical services immediately.",
+        "Cordon off the area with caution tape or cones from a safe distance."
       ]
     }
   },
   {
-    // Matches: water, leak, pipe, burst, flood, drainage, sewage, flowing
-    pattern: /(water|leak|pipe|burst|flood|drainage|sewage|overflow)/i,
-    response: {
-      category: "Water Leakage",
-      severity: "High",
-      estimatedTime: "4-6 Hours",
-      impactScope: 75,
-      summary: "Active water loss or contamination risk identified.",
-      precautions: [
-        "Avoid contact with stagnant water (contamination risk).",
-        "Turn off the main valve if accessible and safe.",
-        "Move valuable items to higher ground."
-      ],
-      diyFixes: [
-        "Wrap the leak with rubber sheets or cycle tubes temporarily.",
-        "Use sandbags to divert water flow away from homes.",
-        "Clear debris blocking the nearest storm drain."
-      ]
-    }
-  },
-  {
-    // Matches: garbage, trash, waste, dump, smell, stink, rubbish, dustbin
-    pattern: /(garbage|trash|waste|dump|smell|stink|rubbish|dustbin|litter)/i,
+    id: "garbage",
+    category: "Garbage",
+    textPattern: /(garbage|trash|waste|dump|smell|stink|rubbish|dustbin|litter|plastic|refuse|debris)/i,
+    visionPattern: /(garbage|trash|waste|dustbin|ashcan|carton|bag|plastic|bottle|junk|litter|recycling)/i,
     response: {
       category: "Garbage",
       severity: "Low",
-      estimatedTime: "1 Day",
+      estimatedTime: "1-2 Days",
       impactScope: 30,
-      summary: "Accumulated waste posing hygiene and odor issues.",
+      summary: "Accumulated waste posing hygiene, pest, and odor issues.",
       precautions: [
-        "Wear a mask to avoid inhaling foul odors/spores.",
-        "Do not burn the garbage (toxic fumes).",
-        "Keep the area dry to prevent mosquito breeding."
+        "Wear a face mask when near the site.",
+        "Do not burn plastic or municipal waste.",
+        "Keep the surrounding area dry to prevent pest breeding."
       ],
       diyFixes: [
-        "Segregate any visible dry/wet waste if safe.",
-        "Sprinkle bleaching powder to control odor and pests.",
-        "Organize a community cleanup drive for non-hazardous waste."
+        "Ensure waste bins are covered securely.",
+        "Sprinkle bleaching powder around the perimeter to neutralize odor.",
+        "Coordinate with municipal sanitation workers for clearance."
       ]
     }
   },
   {
-    // Matches: manhole, sewer cover, drain cover, open drain, chamber
-    pattern: /(manhole|sewer|drain cover|open drain|chamber)/i,
+    id: "manhole",
+    category: "Manhole",
+    textPattern: /(manhole|sewer|drain cover|open drain|chamber|broken lid)/i,
+    visionPattern: /(manhole|sewer|disk|hatch|lid|drain|iron cover)/i,
     response: {
       category: "Manhole",
       severity: "Critical",
       estimatedTime: "4-8 Hours",
       impactScope: 90,
-      summary: "Open manhole posing severe fall hazard to pedestrians/vehicles.",
+      summary: "Open or damaged manhole posing severe fall and injury risk.",
       precautions: [
-        "Do not walk through flooded streets (hidden manholes).",
-        "Keep a close watch on children playing nearby.",
-        "Do not attempt to cover with weak wood/cardboard."
+        "Do not walk near the opening during rain or low visibility.",
+        "Keep children away from the open chamber.",
+        "Avoid driving over cracked or misaligned covers."
       ],
       diyFixes: [
-        "Insert a long branch/stick inside to warn passersby.",
-        "Place heavy stones or a tire around the opening.",
-        "Barricade with visible tape or red flags."
+        "Insert a tall, visible warning branch or reflective stick into the hole.",
+        "Surround the opening with heavy stones or cones.",
+        "Barricade with bright warning tape."
+      ]
+    }
+  },
+  {
+    id: "tree",
+    category: "Fallen Tree",
+    textPattern: /(tree|branch|fallen|uprooted|blocking|wood|timber)/i,
+    visionPattern: /(tree|branch|wood|log|forest|park|plant|shrub)/i,
+    response: {
+      category: "Fallen Tree",
+      severity: "High",
+      estimatedTime: "12-24 Hours",
+      impactScope: 70,
+      summary: "Fallen tree or large branch obstructing traffic or public pathways.",
+      precautions: [
+        "Do not stand under unstable or hanging branches.",
+        "Check for power lines tangled in the branches before moving.",
+        "Divert oncoming traffic safely around the tree."
+      ],
+      diyFixes: [
+        "Clear small, loose twigs and leaves from pathways.",
+        "Mark the obstacle with reflective tape for night visibility.",
+        "Contact local forestry or municipal authorities for heavy removal."
       ]
     }
   }
 ];
 
-async function fileToGenerativePart(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64Data = reader.result.split(',')[1];
-      resolve({
-        inlineData: {
-          data: base64Data,
-          mimeType: file.type
-        }
-      });
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+// --- AI MODEL CACHE ---
+let aiModel = null;
 
-// --- UPDATED FUNCTION SIGNATURE TO ACCEPT TITLE ---
-export const getAiAdvice = async (imageFile, title, description) => {
-  
-  // Combine Title and Description for scanning
-  const searchText = `${title || ""} ${description || ""}`;
-
-  // --- 2. INSTANT KEYWORD CHECK ---
-  for (const entry of KNOWLEDGE_BASE) {
-    if (entry.pattern.test(searchText)) { 
-      console.log("⚡ Instant Match Found:", entry.response.category);
-      // Simulate small delay for "thinking" effect
-      await new Promise(r => setTimeout(r, 800)); 
-      return entry.response;
-    }
+const loadModel = async () => {
+  if (!aiModel) {
+    console.log("📥 Loading TensorFlow.js MobileNet model...");
+    aiModel = await mobilenet.load();
+    console.log("✅ MobileNet Model Ready.");
   }
-
-  // --- 3. FALLBACK TO GEMINI API (If no keywords match) ---
-  try {
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
-        generationConfig: { responseMimeType: "application/json" } 
-    });
-
-    const userPrompt = `
-      You are an expert Civil Engineer. 
-      Analyze the attached image (if provided).
-      Issue Title: "${title}"
-      Description: "${description}"
-      
-      Return a raw JSON object with these EXACT keys:
-      {
-        "severity": "Critical" | "High" | "Medium" | "Low",
-        "category": "String (e.g. Pothole, Electrical, Water, Garbage)",
-        "estimatedTime": "String (e.g. 4 Hours, 2 Days)",
-        "impactScope": Integer (1-100),
-        "precautions": ["Short tip 1", "Short tip 2", "Short tip 3"],
-        "diyFixes": ["Temporary fix 1", "Temporary fix 2", "Temporary fix 3"],
-        "summary": "One concise sentence describing the specific technical failure."
-      }
-    `;
-
-    let promptParts = [userPrompt];
-    
-    if (imageFile) {
-      const imagePart = await fileToGenerativePart(imageFile);
-      promptParts.push(imagePart);
-    }
-
-    const result = await model.generateContent(promptParts);
-    const response = await result.response;
-    return JSON.parse(response.text());
-
-  } catch (error) {
-    console.error("Gemini API Request Failed:", error);
-    return getOfflineFallback();
-  }
+  return aiModel;
 };
 
+const loadImageForAI = (file) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.src = objectUrl;
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      resolve(img);
+      URL.revokeObjectURL(objectUrl);
+    };
+    img.onerror = (err) => reject(err);
+  });
+};
+
+// --- SMART MATCHING & SCORING ALGORITHM ---
+function evaluateBestMatch(userText, visionPredictions) {
+  let highestScore = 0;
+  let bestMatch = null;
+
+  // Flatten vision predictions into a single string
+  const visionText = visionPredictions.map(p => p.className).join(" ");
+  console.log("👁️ Visual AI Predictions:", visionText);
+
+  KNOWLEDGE_BASE.forEach((entry) => {
+    let currentScore = 0;
+
+    // 1. Check Vision Predictions (Weight: High)
+    visionPredictions.forEach((pred) => {
+      if (entry.visionPattern.test(pred.className)) {
+        // Boost score based on prediction probability (e.g., 80% confidence = +4 points)
+        currentScore += Math.round(pred.probability * 5);
+      }
+    });
+
+    // 2. Check User Text Input (Title & Description)
+    if (entry.textPattern.test(userText)) {
+      currentScore += 3;
+    }
+
+    // 3. Special Disambiguation Rule:
+    // If vision strongly detects water/flooding, give extra weight to Waterlogging
+    // even if user typed generic words like "road fix" or "bad street".
+    if (entry.id === "waterlogging" && /(water|lake|fountain|pool|stream|sea|gutter|drain)/i.test(visionText)) {
+      currentScore += 4;
+    }
+
+    console.log(`📊 Category [${entry.category}] Score: ${currentScore}`);
+
+    if (currentScore > highestScore) {
+      highestScore = currentScore;
+      bestMatch = entry.response;
+    }
+  });
+
+  return bestMatch;
+}
+
+// --- FALLBACK RESPONSE ---
 const getOfflineFallback = () => ({
   severity: "Medium",
-  category: "Connection Error",
-  estimatedTime: "Unknown",
-  impactScope: 0,
-  precautions: ["Check your internet connection."],
-  diyFixes: ["Retry the analysis."],
-  summary: "Could not reach Gemini AI. Please check your API key and network."
+  category: "General Civic Issue",
+  estimatedTime: "24-48 Hours",
+  impactScope: 50,
+  precautions: ["Ensure personal safety around the site.", "Maintain a safe distance.", "Inform neighbors if needed."],
+  diyFixes: ["Provide accurate landmark details.", "Take clear photos from multiple angles.", "Await municipal inspection."],
+  summary: "Issue registered. Flagged for manual municipal review."
 });
+
+// --- MAIN FUNCTION ---
+export const getAiAdvice = async (imageFile, title, description) => {
+  console.log("🚀 Running Multi-Modal Smart Analysis...");
+  const combinedUserText = `${title || ""} ${description || ""}`;
+  let predictions = [];
+
+  // 1. Run Visual Classification if image exists
+  if (imageFile) {
+    try {
+      const model = await loadModel();
+      const imgElement = await loadImageForAI(imageFile);
+      predictions = await model.classify(imgElement);
+    } catch (error) {
+      console.error("⚠️ Image classification skipped:", error);
+    }
+  }
+
+  // 2. Calculate best category match using Vision + Text Scoring
+  const match = evaluateBestMatch(combinedUserText, predictions);
+
+  if (match) {
+    console.log("🎯 Selected Category:", match.category);
+    return match;
+  }
+
+  // 3. Return Fallback if no category score was above 0
+  console.warn("⚠️ No confident match found. Returning fallback.");
+  return getOfflineFallback();
+};
