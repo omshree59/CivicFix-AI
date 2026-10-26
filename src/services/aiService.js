@@ -5,7 +5,6 @@ import { analyzeComplaintWithGemma } from './ollamaService';
 
 // Re-export ollamaService types & helpers
 export * from './ollamaService';
-
 // --- EXPANDED LOCAL KNOWLEDGE BASE ---
 const KNOWLEDGE_BASE = [
   {
