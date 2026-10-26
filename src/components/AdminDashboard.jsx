@@ -2,65 +2,62 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle2, Trash2, MapPin, HardHat, Truck, Cone, Siren, 
+  Copy, CheckCircle2, Trash2, MapPin, HardHat, Truck, Cone, Siren, 
   ClipboardCheck, Zap, Droplets, Shovel, Wrench, Send, PlayCircle, IndianRupee,
   LayoutDashboard, BarChart3, Users, Settings, TrendingUp, Menu, X, ChevronLeft,
-  FileText, Calendar, Star, Shield, Cpu, Radio, Globe, AlertOctagon, ToggleLeft, ToggleRight, Save, User, ArrowRight, Download, Bell, Volume2, RefreshCw, Database
+  FileText, Calendar, Star, Shield, Cpu, Radio, Globe, AlertOctagon, ToggleLeft, ToggleRight, Save, User, ArrowRight, Download, Bell, Volume2, RefreshCw, Database, Bot, Sparkles, Ban
 } from 'lucide-react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore'; 
 import { db } from '../firebase'; 
+import AiTriageCenter from './AiTriageCenter';
+import OllamaModelStatus from './OllamaModelStatus';
+import RejectReasonModal from './RejectReasonModal';
+import { getFastDuplicateInfo, detectAllDuplicates } from '../services/imageHashService';
 
-// --- 1. BACKGROUND ANIMATION ---
-const LiveRoadBackground = () => {
+// --- 1. BACKGROUND ANIMATION (Memoized to prevent frame drops & UI lag) ---
+const STATIC_CARS = [
+  { duration: 8, delay: 0.5, xPercent: 35 },
+  { duration: 11, delay: 2.2, xPercent: 55 },
+  { duration: 9, delay: 4.1, xPercent: 42 }
+];
+
+const LiveRoadBackground = React.memo(() => {
   return (
-    <div className="absolute inset-0 overflow-hidden bg-slate-900 z-0 pointer-events-none">
-      <div className="absolute inset-0 flex justify-center opacity-50">
-        <div className="w-full max-w-4xl h-full border-x-2 border-slate-700 relative bg-slate-800">
+    <div className="absolute inset-0 overflow-hidden bg-slate-900 z-0 pointer-events-none will-change-transform">
+      <div className="absolute inset-0 flex justify-center opacity-40">
+        <div className="w-full max-w-4xl h-full border-x border-slate-700/60 relative bg-slate-800/60">
           <motion.div 
             initial={{ y: -200 }}
             animate={{ y: 0 }}
-            transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+            transition={{ repeat: Infinity, duration: 2.5, ease: "linear" }}
             className="absolute inset-0 flex justify-center"
           >
-            <div className="w-4 h-[200%] border-l-4 border-dashed border-yellow-500/30"></div>
+            <div className="w-4 h-[200%] border-l-4 border-dashed border-yellow-500/25"></div>
           </motion.div>
         </div>
       </div>
-      <motion.div
-        initial={{ x: -200, y: 100, opacity: 0 }}
-        animate={{ x: ['-10%', '110%'], y: [100, 100], opacity: [0, 1, 1, 0] }}
-        transition={{ repeat: Infinity, duration: 20, delay: 2 }}
-        className="absolute top-1/3 left-0 z-10"
-      >
-        <div className="flex items-center gap-2 bg-blue-600/20 p-2 rounded-xl backdrop-blur-sm border border-blue-500/50 shadow-[0_0_30px_rgba(37,99,235,0.3)]">
-            <Truck className="w-10 h-10 text-blue-400" />
-            <div className="flex flex-col">
-              <span className="text-blue-400 font-bold text-[10px] uppercase tracking-widest leading-none">Sector A</span>
-              <span className="text-white font-bold text-xs uppercase tracking-widest leading-none">Patrol</span>
-            </div>
-        </div>
-      </motion.div>
-      {[...Array(6)].map((_, i) => (
+      {STATIC_CARS.map((car, i) => (
         <motion.div
           key={i}
-          initial={{ y: 1200, x: Math.random() * (window.innerWidth / 2) + (window.innerWidth / 4) }} 
+          initial={{ y: 1100 }} 
           animate={{ y: -200 }}
-          transition={{ repeat: Infinity, duration: 5 + Math.random() * 8, delay: Math.random() * 5, ease: "linear" }}
-          className="absolute z-0 opacity-40"
+          transition={{ repeat: Infinity, duration: car.duration, delay: car.delay, ease: "linear" }}
+          style={{ left: `${car.xPercent}%` }}
+          className="absolute z-0 opacity-30 pointer-events-none"
         >
           <div className="flex flex-col items-center">
-             <Truck className="w-12 h-12 text-slate-600 transform -scale-y-100" /> 
-             <div className="flex gap-4 mt-[-8px]">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-500 blur-[2px]"></div>
-                <div className="w-1.5 h-1.5 rounded-full bg-red-500 blur-[2px]"></div>
+             <Truck className="w-10 h-10 text-slate-500 transform -scale-y-100" /> 
+             <div className="flex gap-3 mt-[-6px]">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500 blur-[1px]"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500 blur-[1px]"></div>
              </div>
           </div>
         </motion.div>
       ))}
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-900/60 via-slate-900/40 to-slate-900/90 z-0"></div>
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-900/70 via-slate-900/40 to-slate-900/90 z-0"></div>
     </div>
   );
-};
+});
 
 // --- 2. ANALYTICS ---
 const AnalyticsView = ({ issues }) => {
@@ -552,15 +549,44 @@ const SystemSettingsView = ({ issues }) => {
 };
 
 // --- 7. MAIN DASHBOARD WRAPPER (UPDATED SIDEBAR POSITION) ---
-const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
-  const [activeView, setActiveView] = useState('dashboard');
+const AdminDashboard = ({ issues = [], onUpdateStatus, onDelete }) => {
+  const [activeView, setActiveView] = useState('ai-triage');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Initially closed
 
   const [assigningId, setAssigningId] = useState(null);
+  const [rejectingIssue, setRejectingIssue] = useState(null);
   const [price, setPrice] = useState('');
 
   // --- NEW: AUTO-PLAY NOTIFICATIONS LOGIC ---
-  const prevIssueCount = React.useRef(issues.length);
+  const prevIssueCount = React.useRef(issues?.length || 0);
+
+  // Dynamic Live Duplicate Detection across all loaded complaints
+  const [liveDuplicateMap, setLiveDuplicateMap] = useState({});
+
+  useEffect(() => {
+    let active = true;
+    if (Array.isArray(issues) && issues.length > 0) {
+      detectAllDuplicates(issues).then(map => {
+        if (active) setLiveDuplicateMap(map);
+      });
+    }
+    return () => { active = false; };
+  }, [issues]);
+
+  const getIssueDup = (issue) => {
+    if (!issue) return { isDuplicate: false, confidence: 0 };
+    if (issue.aiAnalysis?.duplicateAssessment?.isDuplicate) {
+      return issue.aiAnalysis.duplicateAssessment;
+    }
+    if (liveDuplicateMap[issue.id]) {
+      return { isDuplicate: true, confidence: 100, ...liveDuplicateMap[issue.id] };
+    }
+    const fast = getFastDuplicateInfo(issue, issues);
+    if (fast) {
+      return { isDuplicate: true, confidence: 100, ...fast };
+    }
+    return issue.aiAnalysis?.duplicateAssessment || { isDuplicate: false, confidence: 0 };
+  };
 
   useEffect(() => {
       // Check if new issues arrived (length increased)
@@ -586,14 +612,60 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
   }, [issues]);
   // -------------------------------------------
 
-  const pendingCount = issues.filter(i => i.status !== 'Resolved').length;
-  const resolvedCount = issues.filter(i => i.status === 'Resolved').length;
+  const [basketFilter, setBasketFilter] = useState('all');
+
+  const pendingCount = (issues || []).filter(i => !i?.status || (i?.status !== 'Resolved' && !i?.status?.toLowerCase().includes('reject'))).length;
+  const resolvedCount = (issues || []).filter(i => i?.status === 'Resolved').length;
+  const rejectedCount = (issues || []).filter(i => i?.status && i?.status?.toLowerCase().includes('reject')).length;
+  const duplicateCount = (issues || []).filter(i => Boolean(getIssueDup(i)?.isDuplicate)).length;
+
+  const displayedIssues = useMemo(() => {
+    return (issues || []).filter(issue => {
+      const s = (issue?.status || 'open').toLowerCase();
+      if (basketFilter === 'pending') {
+        return s !== 'resolved' && !s.includes('reject');
+      }
+      if (basketFilter === 'resolved') {
+        return s === 'resolved';
+      }
+      if (basketFilter === 'rejected') {
+        return s.includes('reject');
+      }
+      if (basketFilter === 'duplicates') {
+        return Boolean(getIssueDup(issue)?.isDuplicate);
+      }
+      return true; // 'all' shows all issues!
+    });
+  }, [issues, basketFilter, liveDuplicateMap]);
+
+  const duplicateGroups = useMemo(() => {
+    if (basketFilter !== 'duplicates') return null;
+    const groups = {};
+    displayedIssues.forEach(issue => {
+      const dup = getIssueDup(issue);
+      const parentTitle = dup.matchedTitle || 'General Cluster';
+      const parentId = dup.matchedIssueId;
+      const key = parentId || parentTitle;
+      if (!groups[key]) {
+        const originalIssue = issues.find(i => (parentId && i.id === parentId) || i.title === parentTitle);
+        groups[key] = {
+          key,
+          parentTitle,
+          originalIssue,
+          items: []
+        };
+      }
+      groups[key].items.push(issue);
+    });
+    return Object.values(groups);
+  }, [displayedIssues, basketFilter, issues, liveDuplicateMap]);
 
   const getStatusColor = (status) => {
     const s = status ? status.toLowerCase() : 'open';
     if (s === 'resolved') return 'bg-green-500/10 text-green-400 border-green-500/20';
     if (s === 'in progress') return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
     if (s === 'accepted') return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+    if (s.includes('rejected')) return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
     return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
   };
 
@@ -602,6 +674,7 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
     if (s === 'resolved') return 'bg-green-500';
     if (s === 'in progress') return 'bg-orange-500';
     if (s === 'accepted') return 'bg-indigo-500';
+    if (s.includes('rejected')) return 'bg-rose-500';
     return 'bg-blue-500';
   };
 
@@ -620,6 +693,15 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
     setPrice('');
   };
 
+  const handleRejectAsDiy = (issueId, reason, diyNotes) => {
+    onUpdateStatus(issueId, 'Rejected (Public DIY)', {
+      reviewedByHuman: true,
+      rejectionReason: reason,
+      publicDiyInstructions: diyNotes,
+      rejectedAt: new Date().toISOString()
+    });
+  };
+
   const toggleSidebar = (e) => {
       e.stopPropagation();
       setIsSidebarOpen(!isSidebarOpen);
@@ -630,6 +712,13 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
       
       {/* 1. BACKGROUND (Z-0) */}
       <LiveRoadBackground />
+      <RejectReasonModal
+        isOpen={!!rejectingIssue}
+        issue={rejectingIssue}
+        onClose={() => setRejectingIssue(null)}
+        onRejectAsDiy={handleRejectAsDiy}
+        onDeleteDirectly={onDelete}
+      />
 
       {/* 2. BACKDROP OVERLAY (Mobile Only - Z-40) */}
       <AnimatePresence>
@@ -675,6 +764,7 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
          <div className="flex-1 p-4 flex flex-col gap-2 overflow-y-auto">
             {/* Top Items */}
             {[
+                { id: 'ai-triage', label: 'AI Triage (Gemma)', icon: <Bot className="w-5 h-5"/>, color: 'indigo' },
                 { id: 'dashboard', label: 'Live Dispatch', icon: <LayoutDashboard className="w-5 h-5"/>, color: 'blue' },
                 { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-5 h-5"/>, color: 'purple' },
                 { id: 'workforce', label: 'Workforce', icon: <Users className="w-5 h-5"/>, color: 'orange' },
@@ -729,6 +819,7 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
                 {isSidebarOpen ? <ChevronLeft className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
             <span className="text-slate-400 font-bold text-sm tracking-widest uppercase md:hidden">Admin Panel</span>
+            <OllamaModelStatus />
         </div>
 
         {activeView === 'dashboard' && (
@@ -738,26 +829,163 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
                         <h2 className="text-3xl font-extrabold text-white">Command Center</h2>
                         <p className="text-slate-400 text-sm font-medium">Dispatch System Active</p>
                     </div>
-                    <div className="flex gap-4">
-                        <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700 p-4 rounded-xl text-center min-w-[100px]">
+                    <div className="flex flex-wrap gap-3">
+                        <button 
+                            type="button"
+                            onClick={() => setBasketFilter('all')}
+                            className={`p-3.5 px-4 rounded-xl text-center min-w-[95px] transition-all cursor-pointer border ${basketFilter === 'all' ? 'bg-slate-700/90 border-blue-500 shadow-md ring-1 ring-blue-500' : 'bg-slate-800/90 border-slate-700 hover:bg-slate-700/60'}`}
+                        >
+                            <p className="text-slate-400 text-xs font-bold uppercase">All</p>
+                            <p className="text-2xl font-bold text-white">{issues.length}</p>
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={() => setBasketFilter('pending')}
+                            className={`p-3.5 px-4 rounded-xl text-center min-w-[95px] transition-all cursor-pointer border ${basketFilter === 'pending' ? 'bg-orange-500/20 border-orange-500 shadow-md ring-1 ring-orange-500' : 'bg-slate-800/90 border-slate-700 hover:bg-slate-700/60'}`}
+                        >
                             <p className="text-slate-400 text-xs font-bold uppercase">Pending</p>
                             <p className="text-2xl font-bold text-orange-500">{pendingCount}</p>
-                        </div>
-                        <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700 p-4 rounded-xl text-center min-w-[100px]">
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={() => setBasketFilter('resolved')}
+                            className={`p-3.5 px-4 rounded-xl text-center min-w-[95px] transition-all cursor-pointer border ${basketFilter === 'resolved' ? 'bg-green-500/20 border-green-500 shadow-md ring-1 ring-green-500' : 'bg-slate-800/90 border-slate-700 hover:bg-slate-700/60'}`}
+                        >
                             <p className="text-slate-400 text-xs font-bold uppercase">Fixed</p>
                             <p className="text-2xl font-bold text-green-500">{resolvedCount}</p>
-                        </div>
+                        </button>
+                        {/* REJECTED BASKET - ONLY VISIBLE IN ADMIN */}
+                        <button 
+                            type="button"
+                            onClick={() => setBasketFilter('rejected')}
+                            className={`p-3.5 px-4 rounded-xl text-center min-w-[95px] transition-all cursor-pointer border ${basketFilter === 'rejected' ? 'bg-rose-500/20 border-rose-500 shadow-md ring-1 ring-rose-500' : 'bg-slate-800/90 border-slate-700 hover:bg-slate-700/60'}`}
+                            title="Complaints rejected because they do not qualify for minimum labour and can be done manually by public"
+                        >
+                            <p className="text-rose-400 text-xs font-bold uppercase flex items-center justify-center gap-1">
+                                <Ban className="w-3 h-3" /> Rejected
+                            </p>
+                            <p className="text-2xl font-bold text-rose-400">{rejectedCount}</p>
+                        </button>
+                        {/* DUPLICATE BASKET - 100% ACCURATE GROUPED */}
+                        <button 
+                            type="button"
+                            onClick={() => setBasketFilter('duplicates')}
+                            className={`p-3.5 px-4 rounded-xl text-center min-w-[95px] transition-all cursor-pointer border ${basketFilter === 'duplicates' ? 'bg-amber-500/20 border-amber-500 shadow-md ring-1 ring-amber-500' : 'bg-slate-800/90 border-slate-700 hover:bg-slate-700/60'}`}
+                            title="Complaints identified as 100% accurate duplicates by AI image & incident analysis"
+                        >
+                            <p className="text-amber-400 text-xs font-bold uppercase flex items-center justify-center gap-1">
+                                <Copy className="w-3 h-3" /> Duplicates
+                            </p>
+                            <p className="text-2xl font-bold text-amber-400">{duplicateCount}</p>
+                        </button>
                     </div>
                 </div>
 
                 <div className="max-w-7xl mx-auto space-y-4 pb-20">
-                    {issues.length === 0 ? (
+                    {basketFilter === 'duplicates' ? (
+                        duplicateGroups && duplicateGroups.length > 0 ? (
+                            duplicateGroups.map((group) => (
+                                <div key={group.key} className="bg-slate-900/80 border border-amber-500/30 rounded-3xl p-6 shadow-2xl space-y-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-500/20 pb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30">
+                                                <Copy className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Duplicate Group</span>
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                                        100% Visual / Incident Match
+                                                    </span>
+                                                </div>
+                                                <h3 className="text-lg font-black text-white mt-0.5">
+                                                    Primary Reference: {group.parentTitle}
+                                                </h3>
+                                            </div>
+                                        </div>
+                                        <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 self-start sm:self-center">
+                                            {group.items.length} Duplicate(s) Grouped
+                                        </span>
+                                    </div>
+
+                                    {group.originalIssue && (
+                                        <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-2xl p-4">
+                                            <div className="flex items-center gap-2 mb-2 text-xs font-bold text-emerald-400">
+                                                <CheckCircle2 className="w-4 h-4" /> Primary Ticket (Original Verified Report)
+                                            </div>
+                                            <div className="flex flex-col sm:flex-row gap-4 items-start">
+                                                {group.originalIssue.imageUrl && (
+                                                    <img src={group.originalIssue.imageUrl} alt="Original" className="w-24 h-20 object-cover rounded-xl border border-emerald-500/30 shrink-0" />
+                                                )}
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-sm font-bold text-white truncate">{group.originalIssue.title}</h4>
+                                                    <p className="text-xs text-slate-400 line-clamp-1">{group.originalIssue.description}</p>
+                                                    <p className="text-[11px] text-slate-500 font-mono mt-1">{group.originalIssue.locationText || "Location recorded"}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-3">
+                                        <p className="text-xs font-bold text-amber-300 uppercase tracking-wider">Grouped Duplicates:</p>
+                                        {group.items.map((issue) => (
+                                            <div key={issue.id} className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                                                <div className="flex items-center gap-4 min-w-0">
+                                                    {issue.imageUrl ? (
+                                                        <img src={issue.imageUrl} className="w-20 h-16 object-cover rounded-xl border border-amber-500/30 shrink-0" alt="Duplicate" />
+                                                    ) : (
+                                                        <div className="w-20 h-16 bg-slate-900 rounded-xl flex items-center justify-center text-slate-600"><MapPin /></div>
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <h4 className="text-sm font-bold text-white truncate">{issue.title}</h4>
+                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                                                100% Match
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-400 line-clamp-1">{issue.description}</p>
+                                                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">{issue.locationText || "Location recorded"}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (confirm(`Mark ticket "${issue.title}" as resolved duplicate?`)) {
+                                                                onUpdateStatus(issue.id, 'Resolved', { duplicateMerged: true, reviewerNote: `Resolved as duplicate of ${group.parentTitle}` });
+                                                            }
+                                                        }}
+                                                        className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-colors"
+                                                    >
+                                                        Resolve Duplicate
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onDelete(issue.id)}
+                                                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
+                                                        title="Delete duplicate ticket"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-center py-20 bg-slate-800/50 backdrop-blur-md rounded-3xl border border-slate-700 border-dashed">
+                                <Copy className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+                                <p className="text-slate-500">No duplicate reports detected (100% threshold rule applied).</p>
+                            </div>
+                        )
+                    ) : displayedIssues.length === 0 ? (
                         <div className="text-center py-20 bg-slate-800/50 backdrop-blur-md rounded-3xl border border-slate-700 border-dashed">
                             <CheckCircle2 className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-                            <p className="text-slate-500">All systems clear. No reports.</p>
+                            <p className="text-slate-500">No reports found in this basket.</p>
                         </div>
                     ) : (
-                        issues.map((issue) => (
+                        displayedIssues.map((issue) => (
                             <motion.div layout key={issue.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative bg-slate-800/90 backdrop-blur-md border border-slate-700 rounded-2xl p-5 shadow-lg">
                                 <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${getStripeColor(issue.status)}`}></div>
                                 <div className="flex flex-col md:flex-row gap-6">
@@ -803,19 +1031,25 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
                                                                 <button key={dept.id} onClick={() => handleForward(issue.id, dept.id)} className={`${dept.color} hover:opacity-90 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-transform active:scale-95`}>
                                                                         {dept.icon} {dept.id}
                                                                 </button>
-                                                            ))}
+                                                ))}
                                                             <button onClick={() => {setAssigningId(null); setPrice('');}} className="text-slate-400 hover:text-white px-3 text-xs border border-slate-600 rounded-lg">Cancel</button>
                                                         </div>
                                                     </div>
                                                 ) : (
+                                                    <div className="flex items-center gap-2">
                                                     <button onClick={() => setAssigningId(issue.id)} className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-blue-900/20">
                                                         <Send className="w-4 h-4" /> Dispatch Contractor
                                                     </button>
+                                                    <button onClick={() => setRejectingIssue(issue)} className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-bold transition-colors" title="Reject if below minimum labour threshold & can be done manually by public">
+                                                        <Ban className="w-3.5 h-3.5" /> Reject (Public DIY)
+                                                    </button>
+                                                    </div>
                                                 )
                                             )}
                                             {issue.status === 'Accepted' && <div className="flex items-center gap-2 text-indigo-400 text-sm font-bold bg-indigo-500/10 px-4 py-2 rounded-lg border border-indigo-500/20"><ClipboardCheck className="w-4 h-4" /> Dispatched (₹{issue.price}) - Awaiting Pickup</div>}
                                             {issue.status === 'In Progress' && <button onClick={() => onUpdateStatus(issue.id, 'Resolved')} className="flex items-center gap-2 px-5 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-bold"><CheckCircle2 className="w-4 h-4" /> Force Resolve</button>}
                                             {issue.status === 'Resolved' && <button onClick={() => onUpdateStatus(issue.id, 'Open')} className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-bold"><PlayCircle className="w-4 h-4" /> Re-open</button>}
+                                            {issue.status?.includes('Rejected') && <div className="flex items-center gap-2 text-rose-400 text-sm font-bold bg-rose-500/10 px-4 py-2 rounded-lg border border-rose-500/20"><Ban className="w-4 h-4" /> {issue.status} - Manual Public Fix</div>}
                                             <button onClick={() => onDelete(issue.id)} className="ml-auto p-2 text-slate-500 hover:text-red-400 rounded-lg"><Trash2 className="w-5 h-5"/></button>
                                         </div>
                                     </div>
@@ -827,6 +1061,7 @@ const AdminDashboard = ({ issues, onUpdateStatus, onDelete }) => {
             </div>
         )}
 
+        {activeView === 'ai-triage' && <AiTriageCenter issues={issues} onUpdateStatus={onUpdateStatus} onDelete={onDelete} />}
         {activeView === 'analytics' && <AnalyticsView issues={issues} />}
         {activeView === 'workforce' && <WorkforceView issues={issues} />}
         {activeView === 'settings' && <SystemSettingsView issues={issues} />}

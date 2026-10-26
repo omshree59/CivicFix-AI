@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { X, CheckCircle2, Clock, MapPin, AlertTriangle, Activity } from 'lucide-react';
 
 const LiveTrackerModal = ({ issues, onClose }) => {
+  const trackableIssues = (issues || []).filter(i => !i.status || !i.status.toLowerCase().includes('reject'));
   
   const getProgressStep = (status) => {
     if (!status) return 0;
@@ -45,12 +46,12 @@ const LiveTrackerModal = ({ issues, onClose }) => {
 
         {/* Scrollable Content - UPDATED: Dark Background */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-950 space-y-6">
-          {issues.length === 0 ? (
+          {trackableIssues.length === 0 ? (
             <div className="text-center py-20 opacity-50 text-slate-500">
                 <p>No active issues to track.</p>
             </div>
           ) : (
-            issues.map((issue) => {
+            trackableIssues.map((issue) => {
                const currentStep = getProgressStep(issue.status);
                
                return (

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { MapPin, Clock, Star, Send } from 'lucide-react'; 
+import DuplicateDetectionBadge from './DuplicateDetectionBadge';
 import { motion } from 'framer-motion'; 
 
 const IssueCard = ({ issue, onClick, onSubmitReview, compact = false }) => {
@@ -51,7 +52,10 @@ const IssueCard = ({ issue, onClick, onSubmitReview, compact = false }) => {
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
         />
         
-        <div className="absolute top-3 right-3 z-20">
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+          {issue.aiAnalysis?.duplicateAssessment?.isDuplicate && (
+            <DuplicateDetectionBadge duplicateInfo={issue.aiAnalysis.duplicateAssessment} compact />
+          )}
           <span className={`px-3 py-1 rounded-full text-[10px] font-bold border ${statusClass} uppercase tracking-wider backdrop-blur-md`}>
             {issue.status || "Open"}
           </span>

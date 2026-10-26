@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Disc } from 'lucide-react';
 import { getAiAdvice } from '../services/aiService';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDocs, query, limit } from 'firebase/firestore';
 import { 
   Loader2, Send, UploadCloud, Sparkles, ShieldAlert,
   Droplets, Construction, Trash2, Lightbulb, HelpCircle, MapPin, ArrowLeft
@@ -109,15 +109,24 @@ const ReportForm = ({ onRefresh, user }) => {
     
     try {
         const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2500));
+        let existingList = [];
+        try {
+          const snap = await getDocs(query(collection(db, "issues"), limit(25)));
+          existingList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (fetchErr) {
+          console.warn("Could not query existing tickets for duplicate check", fetchErr);
+        }
+
         const [advice] = await Promise.all([
-            getAiAdvice(image, formData.title, formData.description),
+            getAiAdvice(image, formData.title, formData.description, existingList),
             minLoadingTime
         ]);
         
         setAiAdvice(advice);
     } catch (error) {
         console.error("AI Generation Error:", error);
-        alert("Could not reach Gemini AI. Please check your connection.");
+        console.warn("AI Generation Notice:", error);
+        alert("Notice: Ollama/AI inference encountered an issue. Using built-in local fallback analysis.");
     } finally {
         setAiLoading(false);
     }
@@ -150,7 +159,14 @@ const ReportForm = ({ onRefresh, user }) => {
         userEmail: user?.email || 'anonymous',
         userName: user?.displayName || 'Anonymous Citizen',
         aiAnalysis: {
-            category: formData.category, 
+            category: formData.category || aiAdvice?.category || "General Civic Issue",
+            urgency: aiAdvice?.urgency || aiAdvice?.severity || "Medium",
+            urgencyScore: aiAdvice?.urgencyScore || 60,
+            urgencyReason: aiAdvice?.urgencyReason || "",
+            recommendedDepartment: aiAdvice?.recommendedDepartment || null,
+            recommendedAction: aiAdvice?.recommendedAction || null,
+            duplicateAssessment: aiAdvice?.duplicateAssessment || null,
+            modelUsed: aiAdvice?.modelUsed || 'Gemma via Ollama',
             severity: aiAdvice?.severity || "Medium",
             summary: formData.description.substring(0, 100),
             estimatedTime: aiAdvice?.estimatedTime || null,
@@ -184,30 +200,30 @@ const ReportForm = ({ onRefresh, user }) => {
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto">
+    <div className="w-full h-full flex flex-col justify-center mx-auto">
       
       {/* STEP 1: CATEGORY SELECTION */}
       {step === 1 && (
-        <div className="animate-in fade-in zoom-in duration-500">
+        <div className="w-full flex-1 flex flex-col justify-center animate-in fade-in zoom-in duration-500 py-4 md:py-6">
            <div className="text-center mb-10">
-                <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">{t('citizen.heading') || "What seems to be the problem?"}</h1>
-                <p className="text-slate-400">{t('citizen.subheading') || "Select a category below to start your report."}</p>
+                <h1 className="text-4xl md:text-5xl font-black text-white mb-3 tracking-tight drop-shadow-md">{t('citizen.heading') || "What seems to be the problem?"}</h1>
+                <p className="text-slate-400 text-base md:text-lg max-w-2xl mx-auto">{t('citizen.subheading') || "Select a category below to start your report."}</p>
            </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 w-full max-w-6xl mx-auto">
             {categories.map((cat) => (
               <button 
                 key={cat.id}
                 onClick={() => handleCategorySelect(cat.id)}
-                className={`relative group overflow-hidden rounded-3xl p-6 h-48 text-left transition-all duration-300 hover:scale-[1.02] ${cat.bg} border border-white/10 hover:border-white/30 shadow-lg hover:shadow-2xl ${cat.shadow}`}
+                className={`relative group overflow-hidden rounded-3xl p-7 md:p-8 min-h-[210px] md:min-h-[250px] text-left transition-all duration-300 hover:scale-[1.03] active:scale-[0.99] ${cat.bg} border border-white/10 hover:border-white/30 shadow-xl hover:shadow-2xl ${cat.shadow} flex flex-col justify-between`}
               >
                 <div className="absolute top-[-20px] right-[-20px] opacity-20 group-hover:opacity-30 transition-opacity transform scale-150 rotate-12">{cat.icon}</div>
                 <div className="relative z-10 flex flex-col h-full justify-between">
-                    <div className="bg-white/10 w-14 h-14 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/20 shadow-inner">
+                    <div className="bg-white/15 w-16 h-16 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/20 shadow-inner group-hover:scale-110 transition-transform">
                         {cat.icon}
                     </div>
                     <div>
-                        <h3 className="text-2xl font-bold text-white mb-1 shadow-black/10 drop-shadow-md">{cat.label}</h3>
+                        <h3 className="text-2xl md:text-3xl font-extrabold text-white mb-1 shadow-black/10 drop-shadow-md">{cat.label}</h3>
                     </div>
                 </div>
               </button>
@@ -218,7 +234,7 @@ const ReportForm = ({ onRefresh, user }) => {
 
       {/* STEP 2: DARK FORM */}
       {step === 2 && (
-        <div className="max-w-2xl mx-auto bg-slate-900/60 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700/50 overflow-hidden animate-in slide-in-from-bottom-10 duration-500">
+        <div className="max-w-3xl mx-auto bg-slate-900/60 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700/50 overflow-hidden animate-in slide-in-from-bottom-10 duration-500">
           
           <div className="p-6 border-b border-slate-700/50 flex items-center gap-4 bg-slate-900/40">
             <button onClick={() => setStep(1)} className="p-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded-xl transition-colors text-slate-300">

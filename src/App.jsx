@@ -12,6 +12,7 @@ import LiveTrackerModal from './components/LiveTrackerModal';
 import ForecastModal from './components/ForecastModal';
 import UserProfileModal from './components/UserProfileModal'; 
 import AiChatbot from './components/AiChatbot'; 
+import AutoScrollCommunityFeed from './components/AutoScrollCommunityFeed';
 import { db, auth } from './firebase'; 
 import { onAuthStateChanged } from 'firebase/auth'; 
 import { collection, query, orderBy, onSnapshot, deleteDoc, updateDoc, doc } from 'firebase/firestore';
@@ -90,9 +91,15 @@ function App() {
   };
 
   useEffect(() => {
-    const q = query(collection(db, "issues"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    // Listen to all issues in collection without dropping docs lacking createdAt
+    const unsubscribe = onSnapshot(collection(db, "issues"), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort newest first in memory safely
+      data.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        return timeB - timeA;
+      });
       setIssues(data);
     });
     return () => unsubscribe();
@@ -283,18 +290,15 @@ function App() {
                                             <p className="text-xs font-bold uppercase tracking-widest">Community Feed</p>
                                         </div>
                                         
-                                        <div className="space-y-3 pb-20">
-                                            {issues.map((issue) => (
-                                                <IssueCard 
-                                                    key={issue.id} 
-                                                    issue={issue} 
-                                                    onClick={() => {
-                                                        setSelectedIssue(issue);
-                                                        setIsSidebarOpen(false); 
-                                                    }} 
-                                                    compact={true} 
-                                                />
-                                            ))}
+                                        <div className="h-96 pb-4">
+                                            <AutoScrollCommunityFeed 
+                                                issues={issues} 
+                                                onSelectIssue={(issue) => {
+                                                    setSelectedIssue(issue);
+                                                    setIsSidebarOpen(false); 
+                                                }} 
+                                                isMobile={true} 
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -331,8 +335,8 @@ function App() {
                     )}
                 </AnimatePresence>
 
-                <main className="flex-1 h-full overflow-y-auto p-8 lg:p-12 scroll-smooth relative z-10">
-                    <div className="max-w-5xl mx-auto">
+                <main className="flex-1 h-full overflow-y-auto p-6 md:p-8 lg:p-12 scroll-smooth relative z-10 flex flex-col">
+                    <div className="w-full max-w-7xl mx-auto flex-1 flex flex-col justify-center">
                         {view === 'my-reports' ? (
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                                     <div className="flex items-center gap-4">
@@ -384,11 +388,8 @@ function App() {
                             Community Reports
                         </h2>
                     </div>
-                    {/* flex-1 + overflow-y-auto + min-h-0 ensures this div takes available space and scrolls internally */}
-                    <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 scroll-smooth custom-scrollbar">
-                        {issues.map((issue) => (
-                            <IssueCard key={issue.id} issue={issue} onClick={() => setSelectedIssue(issue)} compact={true} />
-                        ))}
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                        <AutoScrollCommunityFeed issues={issues} onSelectIssue={(issue) => setSelectedIssue(issue)} />
                     </div>
                 </aside>
             </div>

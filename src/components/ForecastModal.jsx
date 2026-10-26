@@ -50,9 +50,9 @@ const ForecastModal = ({ onClose }) => {
             <div className="bg-indigo-500 p-2 rounded-lg">
                 <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <h2 className="text-2xl font-bold text-white">Gemini Insights</h2>
+            <h2 className="text-2xl font-bold text-white">Gemma AI Insights</h2>
           </div>
-          <p className="text-indigo-200">Predictive analytics for civic issues. Powered by Google Gemini.</p>
+          <p className="text-indigo-200">Predictive analytics for civic issues. Powered by Ollama & Gemma.</p>
         </div>
 
         <div className="p-8">

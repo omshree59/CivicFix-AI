@@ -1,7 +1,8 @@
 // src/components/IssueDetailModal.jsx
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, MapPin, Clock, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { X, MapPin, Clock, ShieldAlert, CheckCircle2, AlertTriangle, Bot } from 'lucide-react';
+import DuplicateDetectionBadge from './DuplicateDetectionBadge';
 
 const IssueDetailModal = ({ issue, onClose }) => {
   if (!issue) return null;
@@ -91,6 +92,9 @@ const IssueDetailModal = ({ issue, onClose }) => {
                   <Clock className="w-4 h-4" />
                   <span>Reported on {new Date(issue.createdAt?.seconds * 1000).toLocaleDateString()}</span>
                 </div>
+                {issue.aiAnalysis?.duplicateAssessment?.isDuplicate && (
+                  <DuplicateDetectionBadge duplicateInfo={issue.aiAnalysis.duplicateAssessment} />
+                )}
               </div>
 
               <hr className="border-slate-800" />

@@ -1,6 +1,10 @@
 // src/services/aiService.js
 import * as tf from '@tensorflow/tfjs';
 import * as mobilenet from '@tensorflow-models/mobilenet';
+import { analyzeComplaintWithGemma } from './ollamaService';
+
+// Re-export ollamaService types & helpers
+export * from './ollamaService';
 
 // --- EXPANDED LOCAL KNOWLEDGE BASE ---
 const KNOWLEDGE_BASE = [
@@ -14,6 +18,8 @@ const KNOWLEDGE_BASE = [
       severity: "High",
       estimatedTime: "4-6 Hours",
       impactScope: 80,
+      recommendedDepartment: "Plumber",
+      recommendedAction: "Dispatch plumbing & drainage crew to seal leak and clear runoff.",
       summary: "Detected water accumulation or flooding on the roadway, posing safety hazards to commuters.",
       precautions: [
         "Avoid driving through deep stagnant water.",
@@ -37,6 +43,8 @@ const KNOWLEDGE_BASE = [
       severity: "Medium",
       estimatedTime: "24-48 Hours",
       impactScope: 60,
+      recommendedDepartment: "Road Maintenance",
+      recommendedAction: "Schedule asphalt patch crew and install temporary safety marker.",
       summary: "Detected surface degradation and road cavity hazardous to vehicles.",
       precautions: [
         "Place a visible marker or reflective cone near the hole.",
@@ -60,6 +68,8 @@ const KNOWLEDGE_BASE = [
       severity: "Critical",
       estimatedTime: "2-4 Hours",
       impactScope: 95,
+      recommendedDepartment: "Electrician",
+      recommendedAction: "Dispatch emergency electrical response team and de-energize affected line.",
       summary: "High-voltage electrical hazard detected. Immediate intervention required.",
       precautions: [
         "STAY AWAY at least 10 meters (30 feet).",
@@ -83,6 +93,8 @@ const KNOWLEDGE_BASE = [
       severity: "Low",
       estimatedTime: "1-2 Days",
       impactScope: 30,
+      recommendedDepartment: "Garbage Collector",
+      recommendedAction: "Assign municipal sanitation waste truck for scheduled bin clearance.",
       summary: "Accumulated waste posing hygiene, pest, and odor issues.",
       precautions: [
         "Wear a face mask when near the site.",
@@ -106,6 +118,8 @@ const KNOWLEDGE_BASE = [
       severity: "Critical",
       estimatedTime: "4-8 Hours",
       impactScope: 90,
+      recommendedDepartment: "Road Maintenance",
+      recommendedAction: "Deploy immediate safety barricade and install replacement reinforced cover.",
       summary: "Open or damaged manhole posing severe fall and injury risk.",
       precautions: [
         "Do not walk near the opening during rain or low visibility.",
@@ -129,6 +143,8 @@ const KNOWLEDGE_BASE = [
       severity: "High",
       estimatedTime: "12-24 Hours",
       impactScope: 70,
+      recommendedDepartment: "Road Maintenance",
+      recommendedAction: "Dispatch chainsaw clearance crew and clear arterial thoroughfare.",
       summary: "Fallen tree or large branch obstructing traffic or public pathways.",
       precautions: [
         "Do not stand under unstable or hanging branches.",
@@ -149,9 +165,13 @@ let aiModel = null;
 
 const loadModel = async () => {
   if (!aiModel) {
-    console.log("📥 Loading TensorFlow.js MobileNet model...");
-    aiModel = await mobilenet.load();
-    console.log("✅ MobileNet Model Ready.");
+    try {
+      console.log("📥 Loading TensorFlow.js MobileNet model...");
+      aiModel = await mobilenet.load();
+      console.log("✅ MobileNet Model Ready.");
+    } catch (e) {
+      console.warn("Could not load MobileNet, relying on Ollama/Gemma & NLP:", e);
+    }
   }
   return aiModel;
 };
@@ -171,38 +191,34 @@ const loadImageForAI = (file) => {
 };
 
 // --- SMART MATCHING & SCORING ALGORITHM ---
-function evaluateBestMatch(userText, visionPredictions) {
+function evaluateBestMatch(userText, visionPredictions = []) {
   let highestScore = 0;
   let bestMatch = null;
 
-  // Flatten vision predictions into a single string
   const visionText = visionPredictions.map(p => p.className).join(" ");
-  console.log("👁️ Visual AI Predictions:", visionText);
+  if (visionText) {
+    console.log("👁️ Visual AI Predictions:", visionText);
+  }
 
   KNOWLEDGE_BASE.forEach((entry) => {
     let currentScore = 0;
 
-    // 1. Check Vision Predictions (Weight: High)
+    // 1. Check Vision Predictions
     visionPredictions.forEach((pred) => {
       if (entry.visionPattern.test(pred.className)) {
-        // Boost score based on prediction probability (e.g., 80% confidence = +4 points)
         currentScore += Math.round(pred.probability * 5);
       }
     });
 
-    // 2. Check User Text Input (Title & Description)
+    // 2. Check User Text Input
     if (entry.textPattern.test(userText)) {
       currentScore += 3;
     }
 
-    // 3. Special Disambiguation Rule:
-    // If vision strongly detects water/flooding, give extra weight to Waterlogging
-    // even if user typed generic words like "road fix" or "bad street".
+    // 3. Special Disambiguation
     if (entry.id === "waterlogging" && /(water|lake|fountain|pool|stream|sea|gutter|drain)/i.test(visionText)) {
       currentScore += 4;
     }
-
-    console.log(`📊 Category [${entry.category}] Score: ${currentScore}`);
 
     if (currentScore > highestScore) {
       highestScore = currentScore;
@@ -219,37 +235,81 @@ const getOfflineFallback = () => ({
   category: "General Civic Issue",
   estimatedTime: "24-48 Hours",
   impactScope: 50,
+  recommendedDepartment: "All Rounder",
+  recommendedAction: "Conduct onsite physical inspection to classify requirements.",
   precautions: ["Ensure personal safety around the site.", "Maintain a safe distance.", "Inform neighbors if needed."],
   diyFixes: ["Provide accurate landmark details.", "Take clear photos from multiple angles.", "Await municipal inspection."],
-  summary: "Issue registered. Flagged for manual municipal review."
+  summary: "Issue registered. Flagged for human reviewer assessment.",
+  modelUsed: "Ollama Gemma / Heuristic Hybrid"
 });
 
-// --- MAIN FUNCTION ---
-export const getAiAdvice = async (imageFile, title, description) => {
-  console.log("🚀 Running Multi-Modal Smart Analysis...");
+// --- MAIN FUNCTION: HYBRID OLLAMA GEMMA + MULTI-MODAL PIPELINE ---
+export const getAiAdvice = async (imageFile, title, description, existingComplaints = []) => {
+  console.log("🚀 Running Gemma & Multi-Modal Civic Triage Analysis...");
   const combinedUserText = `${title || ""} ${description || ""}`;
-  let predictions = [];
+  let visionPredictions = [];
+  let visualKeywords = "";
 
   // 1. Run Visual Classification if image exists
   if (imageFile) {
     try {
       const model = await loadModel();
-      const imgElement = await loadImageForAI(imageFile);
-      predictions = await model.classify(imgElement);
+      if (model) {
+        const imgElement = await loadImageForAI(imageFile);
+        visionPredictions = await model.classify(imgElement);
+        visualKeywords = visionPredictions.map(p => p.className).slice(0, 3).join(", ");
+      }
     } catch (error) {
-      console.error("⚠️ Image classification skipped:", error);
+      console.warn("⚠️ Image visual classification skipped:", error);
     }
   }
 
-  // 2. Calculate best category match using Vision + Text Scoring
-  const match = evaluateBestMatch(combinedUserText, predictions);
+  // 2. Query Ollama with Gemma model for deep triage, urgency scoring, duplicate detection and routing
+  try {
+    const enrichedDescription = visualKeywords 
+      ? `${description || ''} [Visual tags detected: ${visualKeywords}]` 
+      : (description || '');
 
-  if (match) {
-    console.log("🎯 Selected Category:", match.category);
-    return match;
+    const gemmaAnalysis = await analyzeComplaintWithGemma({
+      title: title || '',
+      description: enrichedDescription,
+      imageUrl: (typeof imageFile === 'string' ? imageFile : imageFile?.name) || '',
+      existingComplaints
+    });
+
+    if (gemmaAnalysis) {
+      console.log("🎯 Gemma Analysis Result:", gemmaAnalysis);
+      return {
+        category: gemmaAnalysis.category || "General Civic Issue",
+        severity: gemmaAnalysis.urgency || "Medium",
+        urgency: gemmaAnalysis.urgency || "Medium",
+        urgencyScore: gemmaAnalysis.urgencyScore || 60,
+        urgencyReason: gemmaAnalysis.urgencyReason || "",
+        estimatedTime: gemmaAnalysis.estimatedTime || "24-48 Hours",
+        impactScope: gemmaAnalysis.urgencyScore || 60,
+        recommendedDepartment: gemmaAnalysis.recommendedDepartment || "All Rounder",
+        recommendedAction: gemmaAnalysis.recommendedAction || "Forward to human reviewer for confirmation.",
+        summary: gemmaAnalysis.identifiedIssue || gemmaAnalysis.urgencyReason || combinedUserText.slice(0, 100),
+        precautions: gemmaAnalysis.precautions || [],
+        diyFixes: gemmaAnalysis.diyFixes || [],
+        duplicateAssessment: gemmaAnalysis.duplicateAssessment || { isDuplicate: false, confidence: 0 },
+        modelUsed: gemmaAnalysis.modelUsed || "Gemma via Ollama"
+      };
+    }
+  } catch (err) {
+    console.warn("Gemma analysis attempt encountered an issue, falling back to local multi-modal heuristics:", err);
   }
 
-  // 3. Return Fallback if no category score was above 0
-  console.warn("⚠️ No confident match found. Returning fallback.");
+  // 3. Fallback to Vision + Text Knowledge Base Match
+  const match = evaluateBestMatch(combinedUserText, visionPredictions);
+  if (match) {
+    console.log("🎯 Selected Heuristic Match:", match.category);
+    return {
+      ...match,
+      modelUsed: "Heuristic (Gemma compatible)"
+    };
+  }
+
+  // 4. Return Safe Fallback
   return getOfflineFallback();
 };
