@@ -178,14 +178,16 @@ const loadModel = async () => {
 const loadImageForAI = (file) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.src = objectUrl;
-    img.crossOrigin = "anonymous";
+    const isBlob = typeof Blob !== 'undefined' && file instanceof Blob;
+    const objectUrl = isBlob ? URL.createObjectURL(file) : (typeof file === 'string' ? file : '');
+    if (!objectUrl) return reject(new Error('Invalid image file or URL'));
+    img.crossOrigin = 'anonymous';
     img.onload = () => {
       resolve(img);
-      URL.revokeObjectURL(objectUrl);
+      if (isBlob) URL.revokeObjectURL(objectUrl);
     };
     img.onerror = (err) => reject(err);
+    img.src = objectUrl;
   });
 };
 
