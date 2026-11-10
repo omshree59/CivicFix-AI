@@ -15,6 +15,7 @@ import { INDIAN_LOCATIONS } from '../data/locations';
 import { DEMO_PRESETS, getRandomDemoPreset, getCuratedDemoWave } from '../data/demoPresets';
 import { generateHeuristicTriage } from '../services/ollamaService';
 import { coordinatesForAddress, recurrencePayload } from '../services/recurrenceService';
+import { inferWard, wardsForCity } from '../services/wardService';
 
 const ReportForm = ({ onRefresh, user, issues = [] }) => {
   const { t } = useTranslation();
@@ -29,8 +30,10 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
     state: '',      
     city: '',       
     pincode: '',    
-    addressDetail: '' 
+    addressDetail: '',
+    ward: ''
   });
+  const [wardTouched, setWardTouched] = useState(false);
 
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -78,8 +81,10 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
             state: '', 
             city: '', 
             pincode: '', 
-            addressDetail: '' 
+            addressDetail: '',
+            ward: ''
         });
+        setWardTouched(false);
         setImage(null);
         setPreview(null);
         setPresetImageUrl(null);
@@ -120,8 +125,10 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
       state: preset.state,
       city: preset.city,
       pincode: preset.pincode,
-      addressDetail: preset.addressDetail
+      addressDetail: preset.addressDetail,
+      ward: inferWard(preset.addressDetail)
     });
+    setWardTouched(false);
 
     setImage(null); // Clear local file picker
     setPreview(preset.imageUrl);
@@ -153,8 +160,10 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
       state: '',
       city: '',
       pincode: '',
-      addressDetail: ''
+      addressDetail: '',
+      ward: ''
     });
+    setWardTouched(false);
     setImage(null);
     setPreview(null);
     setPresetImageUrl(null);
@@ -225,6 +234,7 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
           addressDetail: preset.addressDetail,
           locationText: fullLocationString,
           location,
+          ward: inferWard(`${preset.addressDetail} ${fullLocationString}`),
           imageUrl: preset.imageUrl,
           recurrence,
           status: "OPEN",
@@ -339,7 +349,8 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
   const resetForm = () => {
     setIsSubmitted(false);
     setStep(1);
-    setFormData({ category: '', title: '', description: '', state: '', city: '', pincode: '', addressDetail: '' });
+    setFormData({ category: '', title: '', description: '', state: '', city: '', pincode: '', addressDetail: '', ward: '' });
+    setWardTouched(false);
     setImage(null);
     setPreview(null);
     setPresetImageUrl(null);
@@ -380,6 +391,7 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
       
       const fullLocationString = `${formData.addressDetail}, ${formData.city}, ${formData.state} - ${formData.pincode}`;
       const location = coordinatesForAddress(formData);
+      const ward = formData.ward || inferWard(`${formData.addressDetail} ${fullLocationString}`);
       const department = aiAdvice?.recommendedDepartment || null;
       const pool = issues.length ? issues : [];
       const recurrence = recurrencePayload({
@@ -401,6 +413,7 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
         city: formData.city,
         pincode: formData.pincode,
         addressDetail: formData.addressDetail,
+        ward,
         locationText: fullLocationString, 
         location,
         imageUrl: imageUrl,
@@ -699,7 +712,8 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
                             <select 
                                 value={formData.state} 
                                 onChange={(e) => {
-                                    setFormData({ ...formData, state: e.target.value, city: '', pincode: '' });
+                                    setFormData({ ...formData, state: e.target.value, city: '', pincode: '', ward: '' });
+                                    setWardTouched(false);
                                     clearError('state');
                                 }} 
                                 className={`w-full p-3 bg-slate-950/50 border rounded-xl outline-none text-sm font-medium text-white custom-select transition-all ${
@@ -717,7 +731,8 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
                             <select 
                                 value={formData.city} 
                                 onChange={(e) => {
-                                    setFormData({ ...formData, city: e.target.value, pincode: '' });
+                                    setFormData({ ...formData, city: e.target.value, pincode: '', ward: '' });
+                                    setWardTouched(false);
                                     clearError('city');
                                 }} 
                                 disabled={!formData.state} 
@@ -765,11 +780,37 @@ const ReportForm = ({ onRefresh, user, issues = [] }) => {
                         placeholder={t('citizen.addressPlaceholder') || "Street Name, Landmark, House No."}
                         value={formData.addressDetail}
                         onChange={(e) => {
-                            setFormData({...formData, addressDetail: e.target.value});
+                            const addressDetail = e.target.value;
+                            const next = { ...formData, addressDetail };
+                            if (!wardTouched) next.ward = inferWard(addressDetail);
+                            setFormData(next);
                             clearError('addressDetail');
                         }}
                         />
                         {errors.addressDetail && <p className="text-red-400 text-xs mt-1 absolute -bottom-5 left-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {errors.addressDetail}</p>}
+                    </div>
+
+                    <div className="relative pt-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1 block">Ward / campus zone</label>
+                        <select
+                          value={formData.ward}
+                          onChange={(e) => {
+                            setWardTouched(true);
+                            setFormData({ ...formData, ward: e.target.value });
+                          }}
+                          disabled={!formData.city}
+                          className={`w-full p-3 bg-slate-950/50 border rounded-xl outline-none text-sm font-medium text-white disabled:opacity-50 transition-all ${
+                            isHighlighting ? 'bg-indigo-950/30 border-indigo-500 ring-1 ring-indigo-500' : 'border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                          }`}
+                        >
+                          <option value="" className="bg-slate-900 text-slate-400">Auto from address, or pick a zone</option>
+                          {wardsForCity(formData.city).map((wardName) => (
+                            <option key={wardName} value={wardName} className="bg-slate-900">{wardName}</option>
+                          ))}
+                          {formData.ward && !wardsForCity(formData.city).includes(formData.ward) && (
+                            <option value={formData.ward} className="bg-slate-900">{formData.ward}</option>
+                          )}
+                        </select>
                     </div>
                 </div>
 

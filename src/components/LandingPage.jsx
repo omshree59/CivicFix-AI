@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
-import { INDIAN_LOCATIONS } from '../data/locations'; 
+import { INDIAN_LOCATIONS } from '../data/locations';
+import { CITYWIDE_WARD, wardsForCity } from '../services/wardService'; 
 
 // --- DATABASE OF APPROVED GMAIL ACCOUNTS ---
 const APPROVED_CONTRACTORS = {
@@ -29,7 +30,7 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
   const [activeTab, setActiveTab] = useState(null); 
   const [contractorStep, setContractorStep] = useState(0); 
   const [selectedTrade, setSelectedTrade] = useState(null);
-  const [contractorLoc, setContractorLoc] = useState({ state: '', city: '' });
+  const [contractorLoc, setContractorLoc] = useState({ state: '', city: '', ward: '' });
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
 
@@ -84,7 +85,7 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
 
   // --- CONTRACTOR GOOGLE AUTH ---
   const handleContractorGoogleLogin = async () => {
-      if (!contractorLoc.state || !contractorLoc.city) return alert("Please select your operating location first!");
+      if (!contractorLoc.state || !contractorLoc.city || !contractorLoc.ward) return alert("Please select your operating state, city, and ward first!");
       setLoading(true);
       try {
           const result = await signInWithPopup(auth, googleProvider);
@@ -94,7 +95,7 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
           if (contractorData) {
               onSelectRole('contractor', { 
                 displayName: googleName, agencyName: contractorData.name, roleType: selectedTrade.id,
-                operatingState: contractorLoc.state, operatingCity: contractorLoc.city,
+                operatingState: contractorLoc.state, operatingCity: contractorLoc.city, operatingWard: contractorLoc.ward,
                 rating: contractorData.rating, licenseId: contractorData.id, email: email, verified: true 
               });
           } else {
@@ -108,7 +109,7 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
 
   const handleCardClick = (role) => {
     if (activeTab === role) return;
-    setActiveTab(role); setPin(''); setError(false); setContractorStep(0); setSelectedTrade(null); setContractorLoc({state:'', city:''});
+    setActiveTab(role); setPin(''); setError(false); setContractorStep(0); setSelectedTrade(null); setContractorLoc({state:'', city:'', ward:''});
   };
 
   return (
@@ -238,9 +239,10 @@ const LandingPage = ({ onSelectRole, cachedUser }) => {
                         <motion.div key="step3" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}>
                              <div className="flex justify-between items-center mb-2"><p className="text-xs text-orange-400 font-bold uppercase">4. Operating Location</p><button onClick={(e) => {e.stopPropagation(); setContractorStep(2)}} className="text-slate-500 hover:text-white"><ChevronLeft className="w-4 h-4"/></button></div>
                              <div className="space-y-2">
-                                <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs outline-none focus:ring-1 focus:ring-orange-500" value={contractorLoc.state} onChange={(e) => setContractorLoc({...contractorLoc, state: e.target.value, city: ''})} onClick={(e) => e.stopPropagation()}><option value="">Select State</option>{Object.keys(INDIAN_LOCATIONS).sort().map(s => <option key={s} value={s}>{s}</option>)}</select>
-                                <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50" value={contractorLoc.city} onChange={(e) => setContractorLoc({...contractorLoc, city: e.target.value})} onClick={(e) => e.stopPropagation()} disabled={!contractorLoc.state}><option value="">Select City</option>{contractorLoc.state && Object.keys(INDIAN_LOCATIONS[contractorLoc.state]).map(c => <option key={c} value={c}>{c}</option>)}</select>
-                                <button onClick={(e) => { e.stopPropagation(); setContractorStep(4); }} className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white p-2 rounded-lg text-xs font-bold mt-2 flex items-center justify-center gap-2">Next <ArrowRight className="w-3 h-3"/></button>
+                                <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs outline-none focus:ring-1 focus:ring-orange-500" value={contractorLoc.state} onChange={(e) => setContractorLoc({...contractorLoc, state: e.target.value, city: '', ward: ''})} onClick={(e) => e.stopPropagation()}><option value="">Select State</option>{Object.keys(INDIAN_LOCATIONS).sort().map(s => <option key={s} value={s}>{s}</option>)}</select>
+                                <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50" value={contractorLoc.city} onChange={(e) => setContractorLoc({...contractorLoc, city: e.target.value, ward: ''})} onClick={(e) => e.stopPropagation()} disabled={!contractorLoc.state}><option value="">Select City</option>{contractorLoc.state && Object.keys(INDIAN_LOCATIONS[contractorLoc.state]).map(c => <option key={c} value={c}>{c}</option>)}</select>
+                                <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50" value={contractorLoc.ward} onChange={(e) => setContractorLoc({...contractorLoc, ward: e.target.value})} onClick={(e) => e.stopPropagation()} disabled={!contractorLoc.city}><option value="">Select ward / campus zone</option>{wardsForCity(contractorLoc.city).map(w => <option key={w} value={w}>{w}</option>)}<option value={CITYWIDE_WARD}>{CITYWIDE_WARD}</option></select>
+                                <button onClick={(e) => { e.stopPropagation(); if (!contractorLoc.state || !contractorLoc.city || !contractorLoc.ward) { alert("Select a state, city, and ward before continuing."); return; } setContractorStep(4); }} className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white p-2 rounded-lg text-xs font-bold mt-2 flex items-center justify-center gap-2">Next <ArrowRight className="w-3 h-3"/></button>
                              </div>
                         </motion.div>
                     )}

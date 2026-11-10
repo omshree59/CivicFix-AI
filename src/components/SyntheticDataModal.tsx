@@ -12,6 +12,7 @@ import {
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { coordinatesForAddress, recurrencePayload } from '../services/recurrenceService';
+import { inferWard } from '../services/wardService';
 
 interface Props {
   isOpen: boolean;
@@ -54,6 +55,7 @@ export const SyntheticDataModal: React.FC<Props> = ({
 
         const locationText = `${item.addressDetail}, ${item.city}, ${item.state} - ${item.pincode}`;
         const location = coordinatesForAddress(item);
+        const ward = inferWard(`${item.addressDetail} ${locationText}`);
         const recurrence = recurrencePayload({
           department: aiTriage.recommendedDepartment,
           category: item.category,
@@ -73,6 +75,7 @@ export const SyntheticDataModal: React.FC<Props> = ({
           city: item.city,
           pincode: item.pincode,
           addressDetail: item.addressDetail,
+          ward,
           locationText,
           location,
           recurrence,
