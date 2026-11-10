@@ -1,6 +1,7 @@
 // src/components/ContractorDashboard.jsx
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { issueMatchesWard, issueWard } from '../services/wardService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Briefcase, CheckCircle2, MapPin, Clock, ArrowRight, 
@@ -125,6 +126,7 @@ const ContractorDashboard = ({ issues, onUpdateStatus, user }) => {
   const availableJobs = issues.filter(i => {
       // Must match city
       if (user?.operatingCity && i.city !== user.operatingCity) return false;
+      if (!issueMatchesWard(i, user?.operatingWard)) return false;
       // Must match trade
       const isMyTrade = allowedTags.includes('ALL') || (i.assignedTo && allowedTags.includes(i.assignedTo)) || allowedTags.includes(i.aiAnalysis?.category);
       // Must be 'Accepted' (meaning Admin sent it, but no specific contractor took it yet)
@@ -194,7 +196,7 @@ const ContractorDashboard = ({ issues, onUpdateStatus, user }) => {
 
                 {user?.operatingCity && (
                     <span className="bg-slate-900 text-amber-500 px-3 py-1 rounded text-xs font-bold uppercase border border-slate-700 flex items-center gap-1 tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.1)] whitespace-nowrap">
-                        <MapPin className="w-3 h-3"/> {user.operatingCity}
+                        <MapPin className="w-3 h-3"/> {user.operatingCity}{user?.operatingWard ? ` · ${user.operatingWard}` : ''}
                     </span>
                 )}
              </div>
@@ -242,7 +244,7 @@ const ContractorDashboard = ({ issues, onUpdateStatus, user }) => {
             {activeTab === 'available' && (
               <motion.div key="available" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.2 }} className="space-y-4">
                 {availableJobs.length === 0 ? (
-                  <EmptyState icon={<Target className="w-12 h-12 text-slate-600"/>} title={t('contractor.noOrders') || "Systems Clear"} desc={t('contractor.noOrdersDesc') || `No pending assignments detected in ${user?.operatingCity || 'your sector'}.`} />
+                  <EmptyState icon={<Target className="w-12 h-12 text-slate-600"/>} title={t('contractor.noOrders') || "Systems Clear"} desc={t('contractor.noOrdersDesc') || `No pending assignments in ${user?.operatingWard && user.operatingWard !== 'Entire city' ? user.operatingWard : (user?.operatingCity || 'your sector')}.`} />
                 ) : (
                   availableJobs.map(issue => (
                     <JobCard 
@@ -370,6 +372,11 @@ const JobCard = ({ issue, type, onAction, btnText }) => {
                                     : `${issue.addressDetail ? issue.addressDetail + ', ' : ''}${issue.city}, ${issue.state}${issue.pincode ? ' - ' + issue.pincode : ''}`}
                             </span>
                         </span>
+                        {issueWard(issue) && (
+                            <span className="flex items-center gap-1.5 whitespace-nowrap text-amber-300/90">
+                                <Crosshair className="w-3.5 h-3.5 text-amber-400" /> {issueWard(issue)}
+                            </span>
+                        )}
                         <span className="flex items-center gap-1.5 whitespace-nowrap"><Clock className="w-3.5 h-3.5 text-blue-500/80" /> {new Date(issue.createdAt?.seconds * 1000).toLocaleDateString()}</span>
                     </div>
                 )}
