@@ -164,7 +164,7 @@ function App() {
       {/* Modals */}
       {selectedIssue && <IssueDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} />}
       {showTrackerModal && <LiveTrackerModal issues={issues} onClose={() => setShowTrackerModal(false)} />}
-      {showForecast && <ForecastModal onClose={() => setShowForecast(false)} />}
+      {showForecast && <ForecastModal issues={issues} onClose={() => setShowForecast(false)} />}
       {showProfileModal && <UserProfileModal user={currentUser} onClose={() => setShowProfileModal(false)} />}
 
       {/* NAVBAR */}
