@@ -10,6 +10,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeComplaintWithGemma } from '../services/ollamaService';
 import DuplicateDetectionBadge from './DuplicateDetectionBadge';
+import RecurrenceBadge from './RecurrenceBadge';
 import SyntheticDataModal from './SyntheticDataModal';
 import OllamaModelStatus from './OllamaModelStatus';
 import RejectReasonModal from './RejectReasonModal';
@@ -30,6 +31,14 @@ interface Issue {
   price?: string | number;
   contractorName?: string;
   isSynthetic?: boolean;
+  recurrence?: {
+    isComeback?: boolean;
+    matchedIssueId?: string;
+    matchedTitle?: string;
+    distanceMeters?: number;
+    daysSinceResolved?: number;
+    reason?: string;
+  };
   aiAnalysis?: {
     category?: string;
     severity?: string;
@@ -128,6 +137,7 @@ export const AiTriageCenter: React.FC<Props> = ({
   const duplicateCount = issues.filter(i => Boolean(getDuplicateInfo(i)?.isDuplicate)).length;
   const pendingReviewCount = issues.filter(i => !i?.status || i?.status === 'OPEN' || i?.status === 'Open').length;
   const rejectedCount = issues.filter(i => (i?.status || '').toLowerCase().includes('reject')).length;
+  const comebackCount = issues.filter(i => i?.recurrence?.isComeback).length;
 
   // Filter issues (memoized for lag-free performance)
   const filteredIssues = React.useMemo(() => {
@@ -146,6 +156,7 @@ export const AiTriageCenter: React.FC<Props> = ({
       if (filterUrgency === 'Resolved') return isResolved;
       if (filterUrgency === 'Rejected') return isRejected;
       if (filterUrgency === 'Duplicates') return !!getDuplicateInfo(issue).isDuplicate;
+      if (filterUrgency === 'Comebacks') return !!issue.recurrence?.isComeback;
 
       // Urgency level filters
       const urgency = issue.aiAnalysis?.urgency || issue.aiAnalysis?.severity || 'Medium';
@@ -451,7 +462,7 @@ export const AiTriageCenter: React.FC<Props> = ({
           <span className="text-slate-400 font-bold flex items-center gap-1.5 mr-1">
             <Filter className="w-3.5 h-3.5" /> Filter Queue:
           </span>
-          {['all', 'Pending', 'Duplicates', 'Critical', 'High', 'Medium', 'Low', 'Rejected', 'Resolved'].map(u => (
+          {['all', 'Pending', 'Duplicates', 'Comebacks', 'Critical', 'High', 'Medium', 'Low', 'Rejected', 'Resolved'].map(u => (
             <button
               key={u}
               type="button"
@@ -462,7 +473,7 @@ export const AiTriageCenter: React.FC<Props> = ({
                   : 'bg-slate-900/60 text-slate-400 hover:text-white border border-slate-700/60'
               }`}
             >
-              {u}
+              {u === 'Comebacks' && comebackCount > 0 ? `Comebacks (${comebackCount})` : u}
             </button>
           ))}
         </div>
@@ -541,6 +552,10 @@ export const AiTriageCenter: React.FC<Props> = ({
 
                         {duplicateInfo?.isDuplicate && (
                           <DuplicateDetectionBadge duplicateInfo={duplicateInfo} compact />
+                        )}
+
+                        {issue.recurrence?.isComeback && (
+                          <RecurrenceBadge recurrence={issue.recurrence} compact />
                         )}
 
                         {issue.isSynthetic && (
@@ -713,9 +728,14 @@ export const AiTriageCenter: React.FC<Props> = ({
                 </div>
 
                 {/* Duplicate details drawer if present */}
-                {duplicateInfo?.isDuplicate && (
-                  <div className="mt-4 pt-3 border-t border-slate-800">
-                    <DuplicateDetectionBadge duplicateInfo={duplicateInfo} />
+                {(duplicateInfo?.isDuplicate || issue.recurrence?.isComeback) && (
+                  <div className="mt-4 pt-3 border-t border-slate-800 space-y-2">
+                    {duplicateInfo?.isDuplicate && (
+                      <DuplicateDetectionBadge duplicateInfo={duplicateInfo} />
+                    )}
+                    {issue.recurrence?.isComeback && (
+                      <RecurrenceBadge recurrence={issue.recurrence} />
+                    )}
                   </div>
                 )}
 

@@ -14,11 +14,13 @@ import {
 import { INDIAN_LOCATIONS } from '../data/locations';
 import { DEMO_PRESETS, getRandomDemoPreset, getCuratedDemoWave } from '../data/demoPresets';
 import { generateHeuristicTriage } from '../services/ollamaService';
+import { coordinatesForAddress, recurrencePayload } from '../services/recurrenceService';
 
-const ReportForm = ({ onRefresh, user }) => {
+const ReportForm = ({ onRefresh, user, issues = [] }) => {
   const { t } = useTranslation();
   const [step, setStep] = useState(1); 
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [comebackNotice, setComebackNotice] = useState(null);
   
   const [formData, setFormData] = useState({
     category: '', 
@@ -159,6 +161,7 @@ const ReportForm = ({ onRefresh, user }) => {
     setActivePresetId(null);
     setAiAdvice(null);
     setErrors({});
+    setComebackNotice(null);
   };
 
   // --- MIX & LOAD SYNTHETIC WAVE (5 RANDOM TICKETS) ---
@@ -181,10 +184,15 @@ const ReportForm = ({ onRefresh, user }) => {
         console.warn("Could not query existing tickets for wave context:", fetchErr);
       }
 
+      const seen = new Map();
+      for (const item of [...issues, ...existingList]) {
+        if (item?.id) seen.set(item.id, item);
+      }
+      const pool = [...seen.values()];
+
       for (const preset of wave) {
         const fullLocationString = `${preset.addressDetail}, ${preset.city}, ${preset.state} - ${preset.pincode}`;
-        const lat = 12.9716 + (Math.random() - 0.5) * 0.04;
-        const lng = 77.5946 + (Math.random() - 0.5) * 0.04;
+        const location = coordinatesForAddress(preset);
 
         // Perform local AI triage evaluation
         const triage = generateHeuristicTriage(
@@ -196,6 +204,17 @@ const ReportForm = ({ onRefresh, user }) => {
           fullLocationString
         );
 
+        const recurrence = recurrencePayload({
+          department: triage.recommendedDepartment || preset.department,
+          category: preset.category,
+          location,
+          addressDetail: preset.addressDetail,
+          city: preset.city,
+          state: preset.state,
+          pincode: preset.pincode,
+          locationText: fullLocationString,
+        }, pool);
+
         const newDocRef = await addDoc(collection(db, "issues"), {
           title: preset.title,
           description: preset.complaintText,
@@ -205,8 +224,9 @@ const ReportForm = ({ onRefresh, user }) => {
           pincode: preset.pincode,
           addressDetail: preset.addressDetail,
           locationText: fullLocationString,
-          location: { lat, lng },
+          location,
           imageUrl: preset.imageUrl,
+          recurrence,
           status: "OPEN",
           userId: `demo-judge-${preset.id}`,
           userEmail: "judge-demo@civicfix.ai",
@@ -232,7 +252,7 @@ const ReportForm = ({ onRefresh, user }) => {
         });
 
         // Add newly created ticket to existingList so downstream duplicate detection links correctly
-        existingList.push({
+        const created = {
           id: newDocRef.id,
           title: preset.title,
           description: preset.complaintText,
@@ -240,8 +260,15 @@ const ReportForm = ({ onRefresh, user }) => {
           locationText: fullLocationString,
           addressDetail: preset.addressDetail,
           city: preset.city,
-          state: preset.state
-        });
+          state: preset.state,
+          pincode: preset.pincode,
+          location,
+          status: 'OPEN',
+          aiAnalysis: { recommendedDepartment: triage.recommendedDepartment || preset.department },
+          recurrence,
+        };
+        existingList.push(created);
+        pool.push(created);
       }
 
       if (onRefresh) onRefresh();
@@ -319,6 +346,7 @@ const ReportForm = ({ onRefresh, user }) => {
     setActivePresetId(null);
     setAiAdvice(null);
     setErrors({});
+    setComebackNotice(null);
     if (onRefresh) onRefresh();
   };
 
@@ -351,7 +379,19 @@ const ReportForm = ({ onRefresh, user }) => {
       }
       
       const fullLocationString = `${formData.addressDetail}, ${formData.city}, ${formData.state} - ${formData.pincode}`;
-      const safeDefaultLocation = { lat: 12.9716, lng: 77.5946 }; 
+      const location = coordinatesForAddress(formData);
+      const department = aiAdvice?.recommendedDepartment || null;
+      const pool = issues.length ? issues : [];
+      const recurrence = recurrencePayload({
+        department,
+        category: formData.category || aiAdvice?.category,
+        location,
+        addressDetail: formData.addressDetail,
+        city: formData.city,
+        state: formData.state,
+        pincode: formData.pincode,
+        locationText: fullLocationString,
+      }, pool);
 
       await addDoc(collection(db, "issues"), {
         title: formData.title,
@@ -362,8 +402,9 @@ const ReportForm = ({ onRefresh, user }) => {
         pincode: formData.pincode,
         addressDetail: formData.addressDetail,
         locationText: fullLocationString, 
-        location: safeDefaultLocation,
+        location,
         imageUrl: imageUrl,
+        recurrence,
         status: "OPEN",
         userId: user?.uid || 'anonymous',
         userEmail: user?.email || 'anonymous',
@@ -388,8 +429,9 @@ const ReportForm = ({ onRefresh, user }) => {
         votes: 0
       });
 
+      setComebackNotice(recurrence?.isComeback ? recurrence : null);
       setIsSubmitted(true);
-      setTimeout(() => resetForm(), 4000);
+      setTimeout(() => resetForm(), 6000);
 
     } catch (err) {
       console.error(err);
@@ -557,9 +599,14 @@ const ReportForm = ({ onRefresh, user }) => {
             <CheckCircle className="h-12 w-12 text-green-400" />
           </div>
           <h2 className="text-3xl font-bold text-white mb-4">Report Submitted!</h2>
-          <p className="text-lg text-slate-300 mb-8">
+          <p className={`text-lg text-slate-300 ${comebackNotice?.isComeback ? 'mb-4' : 'mb-8'}`}>
             Thank you for making the community safer. The municipal authorities have been notified of the issue.
           </p>
+          {comebackNotice?.isComeback && (
+            <p className="text-sm text-fuchsia-200 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-xl p-4 mb-8">
+              {comebackNotice.reason}
+            </p>
+          )}
           <button 
             onClick={resetForm}
             className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold py-3 px-6 rounded-xl transition-colors"

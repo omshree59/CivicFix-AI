@@ -113,7 +113,11 @@ function App() {
 
   const handleUpdateStatus = async (id, newStatus, extraData = {}) => {
     const docRef = doc(db, "issues", id);
-    await updateDoc(docRef, { status: newStatus, ...extraData });
+    const payload = { status: newStatus, ...extraData };
+    if (newStatus === 'Resolved' && !extraData.resolvedAt) {
+      payload.resolvedAt = new Date().toISOString();
+    }
+    await updateDoc(docRef, payload);
   };
 
   const handleSubmitReview = async (issueId, rating, comment) => {
@@ -374,7 +378,7 @@ function App() {
                                     )}
                             </div>
                         ) : (
-                            <ReportForm user={currentUser} />
+                            <ReportForm user={currentUser} issues={issues} />
                         )}
                     </div>
                 </main>

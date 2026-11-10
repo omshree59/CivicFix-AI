@@ -11,6 +11,7 @@ import {
 } from '../services/ollamaService';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { coordinatesForAddress, recurrencePayload } from '../services/recurrenceService';
 
 interface Props {
   isOpen: boolean;
@@ -37,6 +38,7 @@ export const SyntheticDataModal: React.FC<Props> = ({
     setLoading(true);
     setSuccessCount(null);
     let count = 0;
+    const pool = [...existingIssues];
 
     try {
       for (const item of prebuilt) {
@@ -50,16 +52,30 @@ export const SyntheticDataModal: React.FC<Props> = ({
           existingComplaints: existingIssues
         });
 
+        const locationText = `${item.addressDetail}, ${item.city}, ${item.state} - ${item.pincode}`;
+        const location = coordinatesForAddress(item);
+        const recurrence = recurrencePayload({
+          department: aiTriage.recommendedDepartment,
+          category: item.category,
+          location,
+          addressDetail: item.addressDetail,
+          city: item.city,
+          state: item.state,
+          pincode: item.pincode,
+          locationText,
+        }, pool);
+
         // Add to Firestore
-        await addDoc(collection(db, "issues"), {
+        const newDocRef = await addDoc(collection(db, "issues"), {
           title: item.title,
           description: item.description,
           state: item.state,
           city: item.city,
           pincode: item.pincode,
           addressDetail: item.addressDetail,
-          locationText: `${item.addressDetail}, ${item.city}, ${item.state} - ${item.pincode}`,
-          location: { lat: 12.9716, lng: 77.5946 },
+          locationText,
+          location,
+          recurrence,
           imageUrl: item.imageUrl,
           status: "OPEN",
           userId: 'synthetic-agent',
@@ -89,6 +105,19 @@ export const SyntheticDataModal: React.FC<Props> = ({
           },
           createdAt: serverTimestamp(),
           votes: 1
+        });
+        pool.push({
+          id: newDocRef.id,
+          title: item.title,
+          status: 'OPEN',
+          addressDetail: item.addressDetail,
+          city: item.city,
+          state: item.state,
+          pincode: item.pincode,
+          location,
+          locationText,
+          category: item.category,
+          aiAnalysis: { recommendedDepartment: aiTriage.recommendedDepartment, category: item.category },
         });
         count++;
       }
