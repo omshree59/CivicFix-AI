@@ -13,6 +13,7 @@ import ForecastModal from './components/ForecastModal';
 import UserProfileModal from './components/UserProfileModal'; 
 import AiChatbot from './components/AiChatbot'; 
 import AutoScrollCommunityFeed from './components/AutoScrollCommunityFeed';
+import ReporterStatusToasts from './components/ReporterStatusToasts';
 import { db, auth } from './firebase'; 
 import { onAuthStateChanged } from 'firebase/auth'; 
 import { collection, query, orderBy, onSnapshot, deleteDoc, updateDoc, doc } from 'firebase/firestore';
@@ -163,9 +164,21 @@ function App() {
       
       {/* Modals */}
       {selectedIssue && <IssueDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} />}
-      {showTrackerModal && <LiveTrackerModal issues={issues} onClose={() => setShowTrackerModal(false)} />}
+      {showTrackerModal && (
+        <LiveTrackerModal
+          issues={role === 'citizen' ? myReports : issues}
+          onClose={() => setShowTrackerModal(false)}
+        />
+      )}
       {showForecast && <ForecastModal onClose={() => setShowForecast(false)} />}
       {showProfileModal && <UserProfileModal user={currentUser} onClose={() => setShowProfileModal(false)} />}
+      {role === 'citizen' && currentUser && (
+        <ReporterStatusToasts
+          issues={issues}
+          user={currentUser}
+          onOpenTracker={() => handleOpenModal(setShowTrackerModal)}
+        />
+      )}
 
       {/* NAVBAR */}
       <nav className="h-16 flex-none z-50 border-b border-slate-800 bg-slate-950/50 backdrop-blur-md sticky top-0">
