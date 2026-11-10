@@ -3,6 +3,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, MapPin, Clock, ShieldAlert, CheckCircle2, AlertTriangle, Bot } from 'lucide-react';
 import DuplicateDetectionBadge from './DuplicateDetectionBadge';
+import RecurrenceBadge from './RecurrenceBadge';
 
 const IssueDetailModal = ({ issue, onClose }) => {
   if (!issue) return null;
@@ -94,6 +95,9 @@ const IssueDetailModal = ({ issue, onClose }) => {
                 </div>
                 {issue.aiAnalysis?.duplicateAssessment?.isDuplicate && (
                   <DuplicateDetectionBadge duplicateInfo={issue.aiAnalysis.duplicateAssessment} />
+                )}
+                {issue.recurrence?.isComeback && (
+                  <RecurrenceBadge recurrence={issue.recurrence} />
                 )}
               </div>
 
